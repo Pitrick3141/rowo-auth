@@ -69,12 +69,8 @@ export default function AdminPanel() {
   };
 
   useEffect(() => {
-    if (token) {
-      fetchAccounts();
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
+    setLoading(false);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -15,6 +15,44 @@ export default function VerificationPage() {
   const [manualNotes, setManualNotes] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [sendingCode, setSendingCode] = useState(false);
+
+  const handleSendCode = async () => {
+    if (!wechatId.trim() || !emailPrefix.trim()) {
+      setStatus('error');
+      setMessage('Please enter your WeChat ID and University Email prefix first.');
+      return;
+    }
+
+    setSendingCode(true);
+    setStatus('idle');
+    setMessage('');
+
+    try {
+      const res = await fetch(`${__API_ENDPOINT__}/api/verify/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wechat_id: wechatId,
+          email: `${emailPrefix}${UNIVERSITY_DOMAIN}`
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setStatus('success');
+        setMessage(data.message || 'Verification code sent to your email.');
+      } else {
+        setStatus('error');
+        setMessage(data.message || 'Failed to send verification code.');
+      }
+    } catch (error) {
+      setStatus('error');
+      setMessage('An error occurred while sending the verification code.');
+    } finally {
+      setSendingCode(false);
+    }
+  };
 
   const methods = [
     {
@@ -99,6 +137,11 @@ export default function VerificationPage() {
       if (data.success) {
         setStatus('success');
         setMessage(data.message);
+        // Clear form after success
+        setWechatId('');
+        setEmailPrefix('');
+        setVerificationCode('');
+        setManualNotes('');
       } else {
         setStatus('error');
         setMessage(data.message);
@@ -216,9 +259,11 @@ export default function VerificationPage() {
                           </div>
                           <button
                             type="button"
-                            className="ml-3 shrink-0 px-4 py-2 border border-slate-300 rounded-xl text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            onClick={handleSendCode}
+                            disabled={sendingCode || !wechatId.trim() || !emailPrefix.trim()}
+                            className="ml-3 shrink-0 px-4 py-2 border border-slate-300 rounded-xl text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                           >
-                            Send Code
+                            {sendingCode ? 'Sending...' : 'Send Code'}
                           </button>
                         </div>
                       </div>
