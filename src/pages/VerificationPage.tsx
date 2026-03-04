@@ -193,7 +193,11 @@ export default function VerificationPage() {
         setManualNotes('');
       } else {
         setStatus('error');
-        setMessage(data.message);
+        if (data.blacklisted && data.blacklist) {
+          setMessage(`Verification blocked: This account is blacklisted. Reason: ${data.blacklist.reason}`);
+        } else {
+          setMessage(data.message);
+        }
       }
     } catch (error) {
       setStatus('error');

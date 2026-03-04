@@ -30,7 +30,19 @@ interface AccountData {
 export default function LandingPage() {
   const [wechatId, setWechatId] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; account?: AccountData; info?: AccountInfo[]; message?: string } | null>(null);
+  const [result, setResult] = useState<{ 
+    success: boolean; 
+    account?: AccountData; 
+    info?: AccountInfo[]; 
+    message?: string;
+    blacklisted?: boolean;
+    blacklist?: {
+      wechat_id: string;
+      reason: string;
+      added_by: string;
+      added_at: string;
+    } | null;
+  } | null>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,13 +109,47 @@ export default function LandingPage() {
         <AnimatePresence mode="wait">
           {result && (
             <motion.div
-              key={result.success ? 'success' : 'error'}
+              key={result.success || result.blacklisted ? 'success' : 'error'}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               className="w-full"
             >
-              {result.success && result.account ? (
+              {result.blacklisted ? (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-6 sm:p-8">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 rounded-2xl bg-slate-900 text-white">
+                          <ShieldAlert className="w-8 h-8" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-slate-900">Account Blacklisted</h2>
+                          <p className="text-slate-500 font-mono mt-1">{result.blacklist.wechat_id}</p>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-slate-900 text-white">
+                        Blacklisted
+                      </span>
+                    </div>
+
+                    {result.blacklist && (
+                      <div className="mt-6 bg-slate-900 border-l-4 border-red-500 p-4 rounded-r-lg flex items-start gap-3 text-white">
+                        <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                        <div>
+                          <h3 className="text-sm font-bold">Restriction Details</h3>
+                          <p className="text-sm opacity-90 mt-1">
+                            Reason: {result.blacklist.reason}
+                          </p>
+                          <p className="text-xs opacity-70 mt-2">
+                            This account has been blacklisted and is prohibited from using verification services.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : result.success && result.account ? (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="p-6 sm:p-8">
                     <div className="flex items-start justify-between">
@@ -135,11 +181,13 @@ export default function LandingPage() {
                           <p className="text-slate-500 font-mono mt-1">{result.account.wechat_id}</p>
                         </div>
                       </div>
-                      {result.account.verified_status === 2 && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
-                          Revoked
-                        </span>
-                      )}
+                      <div className="flex flex-col items-end gap-2">
+                        {result.account.verified_status === 2 && (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                            Revoked
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {result.account.verified_status === 0 && result.account.manual_status === 'rejected' ? (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, Search, MoreVertical, X, AlertTriangle, ShieldOff, Save, ShieldCheck, Key, CheckCircle, Info, Plus, Edit2, Trash2 } from 'lucide-react';
+import { ShieldAlert, Search, MoreVertical, X, AlertTriangle, ShieldOff, Save, ShieldCheck, Key, CheckCircle, Info, Plus, Edit2, Trash2, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
 import ReactMarkdown from 'react-markdown';
@@ -33,6 +33,13 @@ interface AccountData {
   manual_reason?: string;
   manual_admin?: string;
   manual_time?: string;
+  blacklisted?: boolean;
+  blacklist?: null | {
+    wechat_id: string;
+    reason: string;
+    added_by: string;
+    added_at: string;
+  };
 }
 
 export default function AdminPanel() {
@@ -46,8 +53,14 @@ export default function AdminPanel() {
   const [currentAdmin, setCurrentAdmin] = useState<{username: string, role: string} | null>(null);
   const [confirmRotateOpen, setConfirmRotateOpen] = useState(false);
   const [newTokenAlert, setNewTokenAlert] = useState<{isOpen: boolean, token: string}>({isOpen: false, token: ''});
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'accounts' | 'blacklist'>('accounts');
+  const [blacklist, setBlacklist] = useState<any[]>([]);
+  const [loadingBlacklist, setLoadingBlacklist] = useState(false);
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    else setLoading(true);
     try {
       const res = await fetch(`${__API_ENDPOINT__}/api/admin/accounts`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -65,12 +78,37 @@ export default function AdminPanel() {
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
     setLoading(false);
   }, []);
+
+  const fetchBlacklist = async () => {
+    setLoadingBlacklist(true);
+    try {
+      const res = await fetch(`${__API_ENDPOINT__}/api/admin/blacklist`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBlacklist(data.blacklist);
+      }
+    } catch (error) {
+      console.error('Failed to fetch blacklist', error);
+    } finally {
+      setLoadingBlacklist(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (activeTab === 'accounts') fetchAccounts();
+      else fetchBlacklist();
+    }
+  }, [activeTab, isAuthenticated]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +124,6 @@ export default function AdminPanel() {
       if (data.success) {
         localStorage.setItem('admin_token', token);
         setIsAuthenticated(true);
-        fetchAccounts();
       } else {
         setLoginError(data.message);
         setLoading(false);
@@ -166,7 +203,7 @@ export default function AdminPanel() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{currentAdmin?.role === 'moderator' ? 'Moderator Panel' : 'Admin Panel'}</h1>
           <p className="text-sm text-slate-500 mt-1">
-            {currentAdmin?.role === 'moderator' ? 'Review pending manual verifications' : 'Manage verified student accounts'}
+            {currentAdmin?.role === 'moderator' ? 'Review pending manual verifications' : 'Manage verified student accounts and security'}
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -183,109 +220,154 @@ export default function AdminPanel() {
             <AlertTriangle className="w-4 h-4" />
             Rotate Token
           </button>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-slate-400" />
-            </div>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full sm:w-64 pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
-              placeholder="Search accounts..."
-            />
-          </div>
         </div>
       </div>
 
-      <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  WeChat ID
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Student Info
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Method
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th scope="col" className="relative px-6 py-3">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-slate-200">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
-                    Loading accounts...
-                  </td>
-                </tr>
-              ) : filteredAccounts.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
-                    No accounts found.
-                  </td>
-                </tr>
-              ) : (
-                filteredAccounts.map((account) => (
-                  <tr key={account.wechat_id} className={clsx("hover:bg-slate-50 transition-colors", account.manual_status === 'pending' && "bg-amber-50/50")}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-slate-900 flex items-center gap-2">
-                        {account.wechat_id}
-                        {account.manual_status === 'pending' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
-                            Pending
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-500">{format(new Date(account.verification_time), 'MMM d, yyyy')}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-slate-900">{account.student_name || account.email || account.discord_id || 'N/A'}</div>
-                      <div className="text-xs text-slate-500">{account.student_id || account.faculty || ''}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
-                        {account.verification_method}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {account.verified_status === 1 ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                          Verified
-                        </span>
-                      ) : account.verified_status === 2 ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Revoked
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
-                          Unverified
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={() => setSelectedAccount(account)}
-                        className="text-indigo-600 hover:text-indigo-900 p-2 rounded-lg hover:bg-indigo-50 transition-colors"
-                      >
-                        <MoreVertical className="w-5 h-5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div className="flex items-center gap-2 mb-6 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('accounts')}
+          className={clsx(
+            "px-4 py-2 text-sm font-medium transition-colors relative",
+            activeTab === 'accounts' ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
+          )}
+        >
+          Accounts
+          {activeTab === 'accounts' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
+        </button>
+        <button
+          onClick={() => setActiveTab('blacklist')}
+          className={clsx(
+            "px-4 py-2 text-sm font-medium transition-colors relative",
+            activeTab === 'blacklist' ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
+          )}
+        >
+          Blacklist Management
+          {activeTab === 'blacklist' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
+        </button>
       </div>
+
+      {activeTab === 'accounts' ? (
+        <>
+          <div className="flex items-center justify-end gap-2 mb-4">
+            <button
+              onClick={() => fetchAccounts(true)}
+              disabled={loading || refreshing}
+              className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50"
+              title="Refresh user list"
+            >
+              <RotateCcw className={clsx("w-5 h-5", refreshing && "animate-spin")} />
+            </button>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-slate-400" />
+              </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full sm:w-64 pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
+                placeholder="Search accounts..."
+              />
+            </div>
+          </div>
+
+          <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      WeChat ID
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      Student Info
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      Method
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th scope="col" className="relative px-6 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-slate-200">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
+                        Loading accounts...
+                      </td>
+                    </tr>
+                  ) : filteredAccounts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
+                        No accounts found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAccounts.map((account) => (
+                      <tr key={account.wechat_id} className={clsx("hover:bg-slate-50 transition-colors", account.manual_status === 'pending' && "bg-amber-50/50")}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-slate-900 flex items-center gap-2">
+                            {account.wechat_id}
+                            {account.manual_status === 'pending' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                Pending
+                              </span>
+                            )}
+                            {account.blacklisted && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                Blacklisted
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-500">{format(new Date(account.verification_time), 'MMM d, yyyy')}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-slate-900">{account.student_name || account.email || account.discord_id || 'N/A'}</div>
+                          <div className="text-xs text-slate-500">{account.student_id || account.faculty || ''}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
+                            {account.verification_method}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {account.verified_status === 1 ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                              Verified
+                            </span>
+                          ) : account.verified_status === 2 ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              Revoked
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
+                              Unverified
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button
+                            onClick={() => setSelectedAccount(account)}
+                            className="text-indigo-600 hover:text-indigo-900 p-2 rounded-lg hover:bg-indigo-50 transition-colors"
+                          >
+                            <MoreVertical className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        <BlacklistTab token={token} blacklist={blacklist} loading={loadingBlacklist} onUpdate={fetchBlacklist} />
+      )}
 
       <AnimatePresence>
         {selectedAccount && (
@@ -534,6 +616,18 @@ function AccountModal({
                   <span className="text-sm font-medium text-red-600">{account.manual_reason}</span>
                 </div>
               )}
+              {account.blacklisted && account.blacklist && (
+                <div className="flex flex-col border-t border-red-100 pt-2 mt-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-red-600 font-bold">Blacklisted</span>
+                    <span className="text-xs text-slate-500">{format(new Date(account.blacklist.added_at), 'MMM d, yyyy')}</span>
+                  </div>
+                  <p className="text-sm text-red-700 mt-1 bg-red-50 p-2 rounded-lg">
+                    Reason: {account.blacklist.reason}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">Added by {account.blacklist.added_by}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -743,25 +837,27 @@ function AccountModal({
 
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-4">
           {role === 'admin' && (
-            account.verified_status === 1 ? (
-              <button
-                onClick={handleRevoke}
-                disabled={saving}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors disabled:opacity-50"
-              >
-                <ShieldOff className="w-4 h-4" />
-                Revoke Status
-              </button>
-            ) : (
-              <button
-                  onClick={handleUnrevoke}
+            <div className="flex gap-2">
+              {account.verified_status === 1 ? (
+                <button
+                  onClick={handleRevoke}
                   disabled={saving}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  <ShieldCheck className="w-4 h-4" />
-                  Restore Status
-              </button>
-            )
+                  <ShieldOff className="w-4 h-4" />
+                  Revoke Status
+                </button>
+              ) : (
+                <button
+                    onClick={handleUnrevoke}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Restore Status
+                </button>
+              )}
+            </div>
           )}
           
           <div className={`flex gap-3 ${role !== 'admin' ? 'w-full justify-end' : ''}`}>
@@ -781,6 +877,149 @@ function AccountModal({
         message="Please provide a reason for rejection."
         onClose={() => setRejectAlertOpen(false)}
       />
+    </div>
+  );
+}
+
+function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; blacklist: any[]; loading: boolean; onUpdate: () => void }) {
+  const [wechatId, setWechatId] = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wechatId.trim() || !reason.trim()) return;
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`${__API_ENDPOINT__}/api/admin/accounts/${encodeURIComponent(wechatId)}/blacklist`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ reason }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setWechatId('');
+        setReason('');
+        onUpdate();
+      } else {
+        setError(data.message);
+      }
+    } catch (error) {
+      setError('Failed to add to blacklist');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    if (!confirm('Are you sure you want to remove this account from the blacklist?')) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${__API_ENDPOINT__}/api/admin/accounts/${encodeURIComponent(id)}/unblacklist`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        onUpdate();
+      } else {
+        alert(data.message);
+      }
+    } catch (error) {
+      console.error('Failed to unblacklist', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <ShieldAlert className="w-5 h-5 text-red-600" />
+          Add to Blacklist
+        </h3>
+        <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+          <div className="sm:col-span-4">
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">WeChat ID</label>
+            <input
+              type="text"
+              value={wechatId}
+              onChange={(e) => setWechatId(e.target.value)}
+              placeholder="e.g. wxid_12345"
+              className="block w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 sm:text-sm"
+              required
+            />
+          </div>
+          <div className="sm:col-span-6">
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Reason</label>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason for blacklisting..."
+              className="block w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 sm:text-sm"
+              required
+            />
+          </div>
+          <div className="sm:col-span-2 flex items-end">
+            <button
+              type="submit"
+              disabled={saving || !wechatId.trim() || !reason.trim()}
+              className="w-full py-2 px-4 bg-slate-900 hover:bg-black text-white font-medium rounded-xl shadow-sm transition-colors disabled:opacity-50"
+            >
+              {saving ? 'Adding...' : 'Blacklist'}
+            </button>
+          </div>
+        </form>
+        {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
+      </div>
+
+      <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">WeChat ID</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Reason</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Added By</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
+                <th className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-slate-200">
+              {loading ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">Loading blacklist...</td></tr>
+              ) : blacklist.length === 0 ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">No accounts blacklisted.</td></tr>
+              ) : (
+                blacklist.map((item) => (
+                  <tr key={item.wechat_id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-slate-900">{item.wechat_id}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600 max-w-xs truncate" title={item.reason}>{item.reason}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{item.added_by}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{format(new Date(item.added_at), 'MMM d, yyyy')}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button
+                        onClick={() => handleRemove(item.wechat_id)}
+                        disabled={saving}
+                        className="text-red-600 hover:text-red-900 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        Unblacklist
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

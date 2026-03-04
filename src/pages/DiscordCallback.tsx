@@ -50,7 +50,11 @@ export default function DiscordCallback() {
           setMessage('Discord verified! Now enter your WeChat ID to complete the link.');
         } else {
           setStatus('error');
-          setMessage(data.message || 'Failed to verify Discord identity.');
+          if (data.blacklisted && data.blacklist) {
+            setMessage(`Verification blocked: This account is blacklisted. Reason: ${data.blacklist.reason}`);
+          } else {
+            setMessage(data.message || 'Failed to verify Discord identity.');
+          }
         }
       } catch (error) {
         setStatus('error');
@@ -84,7 +88,11 @@ export default function DiscordCallback() {
         setMessage('Successfully verified! Your WeChat account is now linked to your student status.');
       } else {
         setStatus('error');
-        setMessage(data.message || 'Failed to connect accounts.');
+        if (data.blacklisted && data.blacklist) {
+          setMessage(`Verification blocked: This account is blacklisted. Reason: ${data.blacklist.reason}`);
+        } else {
+          setMessage(data.message || 'Failed to connect accounts.');
+        }
       }
     } catch (error) {
       setStatus('error');
