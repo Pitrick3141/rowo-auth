@@ -234,19 +234,21 @@ export default function AdminPanel() {
           Accounts
           {activeTab === 'accounts' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
         </button>
-        <button
-          onClick={() => setActiveTab('blacklist')}
-          className={clsx(
-            "px-4 py-2 text-sm font-medium transition-colors relative",
-            activeTab === 'blacklist' ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
-          )}
-        >
-          Blacklist Management
-          {activeTab === 'blacklist' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
-        </button>
+        {currentAdmin?.role === 'admin' && (
+          <button
+            onClick={() => setActiveTab('blacklist')}
+            className={clsx(
+              "px-4 py-2 text-sm font-medium transition-colors relative",
+              activeTab === 'blacklist' ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Blacklist Management
+            {activeTab === 'blacklist' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
+          </button>
+        )}
       </div>
 
-      {activeTab === 'accounts' ? (
+      {activeTab === 'accounts' || currentAdmin?.role !== 'admin' ? (
         <>
           <div className="flex items-center justify-end gap-2 mb-4">
             <button
