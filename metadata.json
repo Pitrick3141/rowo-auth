@@ -1,0 +1,5 @@
+{
+  "name": "ROwO Auth",
+  "description": "A portal to verify student identity and link it to WeChat accounts.",
+  "requestFramePermissions": []
+}
