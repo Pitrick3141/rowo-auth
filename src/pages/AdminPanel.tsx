@@ -917,7 +917,6 @@ function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; 
   };
 
   const handleRemove = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this account from the blacklist?')) return;
     setSaving(true);
     try {
       const res = await fetch(`${__API_ENDPOINT__}/api/admin/accounts/${encodeURIComponent(id)}/unblacklist`, {
