@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, CheckCircle2, XCircle, Clock, Shield, AlertTriangle, Info, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
 import ReactMarkdown from 'react-markdown';
+import { Link, useSearchParams } from 'react-router-dom';
 
 interface AccountInfo {
   id: number;
@@ -28,7 +29,10 @@ interface AccountData {
 }
 
 export default function LandingPage() {
-  const [wechatId, setWechatId] = useState('');
+  const [searchParams] = useSearchParams();
+  const initialWechatId = searchParams.get('wechat_id') || '';
+
+  const [wechatId, setWechatId] = useState(initialWechatId);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ 
     success: boolean; 
@@ -44,15 +48,14 @@ export default function LandingPage() {
     } | null;
   } | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wechatId.trim()) return;
+  const performSearch = async (idToSearch: string) => {
+    if (!idToSearch.trim()) return;
 
     setLoading(true);
     setResult(null);
 
     try {
-      const res = await fetch(`${__API_ENDPOINT__}/api/verify/${encodeURIComponent(wechatId)}`);
+      const res = await fetch(`${__API_ENDPOINT__}/api/verify/${encodeURIComponent(idToSearch)}`);
       const data = await res.json();
       setResult(data);
     } catch (error) {
@@ -60,6 +63,17 @@ export default function LandingPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (initialWechatId) {
+      performSearch(initialWechatId);
+    }
+  }, [initialWechatId]);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    performSearch(wechatId);
   };
 
   return (
@@ -276,14 +290,23 @@ export default function LandingPage() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-red-50 border border-red-100 rounded-2xl p-6 sm:p-8 flex items-center gap-4">
-                  <div className="bg-red-100 p-3 rounded-2xl text-red-600 shrink-0">
-                    <XCircle className="w-8 h-8" />
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-red-100 p-3 rounded-2xl text-red-600 shrink-0">
+                      <XCircle className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-red-900">Not Verified</h2>
+                      <p className="text-red-700 mt-1">{result.message}</p>
+                      <p className="text-gray-700 mt-1">If this is your account, you can verify it now.</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-red-900">Not Verified</h2>
-                    <p className="text-red-700 mt-1">{result.message}</p>
-                  </div>
+                  <Link
+                    to={`/verify?wechat_id=${encodeURIComponent(wechatId)}`}
+                    className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-xl shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors shrink-0"
+                  >
+                    Verify Now
+                  </Link>
                 </div>
               )}
             </motion.div>

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, Mail, MessageSquare, AlertCircle, CheckCircle2, ChevronRight, Lock } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useSearchParams } from 'react-router-dom';
 
 const DiscordIcon = ({ className }: { className?: string }) => (
   <svg 
@@ -19,8 +20,11 @@ type VerificationMethod = 'adfs' | 'email' | 'discord' | 'manual';
 const UNIVERSITY_DOMAIN = '@uwaterloo.ca';
 
 export default function VerificationPage() {
+  const [searchParams] = useSearchParams();
+  const initialWechatId = searchParams.get('wechat_id') || '';
+
   const [activeMethod, setActiveMethod] = useState<VerificationMethod>('email');
-  const [wechatId, setWechatId] = useState('');
+  const [wechatId, setWechatId] = useState(initialWechatId);
   const [emailPrefix, setEmailPrefix] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [manualNotes, setManualNotes] = useState('');
