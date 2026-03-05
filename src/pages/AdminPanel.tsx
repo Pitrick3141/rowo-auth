@@ -54,7 +54,7 @@ export default function AdminPanel() {
   const [confirmRotateOpen, setConfirmRotateOpen] = useState(false);
   const [newTokenAlert, setNewTokenAlert] = useState<{isOpen: boolean, token: string}>({isOpen: false, token: ''});
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'accounts' | 'blacklist'>('accounts');
+  const [activeTab, setActiveTab] = useState<'accounts' | 'blacklist' | 'batch'>('accounts');
   const [blacklist, setBlacklist] = useState<any[]>([]);
   const [loadingBlacklist, setLoadingBlacklist] = useState(false);
 
@@ -235,16 +235,28 @@ export default function AdminPanel() {
           {activeTab === 'accounts' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
         </button>
         {currentAdmin?.role === 'admin' && (
-          <button
-            onClick={() => setActiveTab('blacklist')}
-            className={clsx(
-              "px-4 py-2 text-sm font-medium transition-colors relative",
-              activeTab === 'blacklist' ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
-            )}
-          >
-            Blacklist Management
-            {activeTab === 'blacklist' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
-          </button>
+          <>
+            <button
+              onClick={() => setActiveTab('blacklist')}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium transition-colors relative",
+                activeTab === 'blacklist' ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              Blacklist Management
+              {activeTab === 'blacklist' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
+            </button>
+            <button
+              onClick={() => setActiveTab('batch')}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium transition-colors relative",
+                activeTab === 'batch' ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              Batch Operations
+              {activeTab === 'batch' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
+            </button>
+          </>
         )}
       </div>
 
@@ -367,8 +379,10 @@ export default function AdminPanel() {
             </div>
           </div>
         </>
-      ) : (
+      ) : activeTab === 'blacklist' ? (
         <BlacklistTab token={token} blacklist={blacklist} loading={loadingBlacklist} onUpdate={fetchBlacklist} />
+      ) : (
+        <BatchTab token={token} onUpdate={fetchAccounts} />
       )}
 
       <AnimatePresence>
@@ -428,6 +442,7 @@ function AccountModal({
   const [infoItems, setInfoItems] = useState<AccountInfo[]>([]);
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [editingInfo, setEditingInfo] = useState<Partial<AccountInfo> | null>(null);
+  const [confirmDeleteInfo, setConfirmDeleteInfo] = useState<{isOpen: boolean, id: number | null}>({isOpen: false, id: null});
 
   useEffect(() => {
     fetchInfo();
@@ -488,7 +503,13 @@ function AccountModal({
   };
 
   const handleDeleteInfo = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this information?')) return;
+    setConfirmDeleteInfo({isOpen: true, id});
+  };
+
+  const executeDeleteInfo = async () => {
+    const id = confirmDeleteInfo.id;
+    if (!id) return;
+    setConfirmDeleteInfo({isOpen: false, id: null});
     setSaving(true);
     try {
       await fetch(`${__API_ENDPOINT__}/api/admin/info/${id}`, {
@@ -879,6 +900,15 @@ function AccountModal({
         message="Please provide a reason for rejection."
         onClose={() => setRejectAlertOpen(false)}
       />
+      <ConfirmDialog
+        isOpen={confirmDeleteInfo.isOpen}
+        title="Delete Information"
+        message="Are you sure you want to delete this information?"
+        onConfirm={executeDeleteInfo}
+        onCancel={() => setConfirmDeleteInfo({isOpen: false, id: null})}
+        confirmText="Delete"
+        isDangerous={true}
+      />
     </div>
   );
 }
@@ -888,6 +918,7 @@ function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; 
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -929,10 +960,11 @@ function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; 
       if (data.success) {
         onUpdate();
       } else {
-        alert(data.message);
+        setAlertMessage(data.message);
       }
     } catch (error) {
       console.error('Failed to unblacklist', error);
+      setAlertMessage(`Failed to unblacklist account: ${error}`);
     } finally {
       setSaving(false);
     }
@@ -1021,6 +1053,167 @@ function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; 
           </table>
         </div>
       </div>
+
+      <AlertDialog
+        isOpen={!!alertMessage}
+        title="Error"
+        message={alertMessage}
+        onClose={() => setAlertMessage('')}
+      />
+    </div>
+  );
+}
+
+function BatchTab({ token, onUpdate }: { token: string; onUpdate: () => void }) {
+  const [input, setInput] = useState('');
+  const [reason, setReason] = useState('');
+  const [action, setAction] = useState<'verify' | 'blacklist'>('verify');
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string; results?: any[] } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const wechatIds = input.split(/[\n,]+/).map(id => id.trim()).filter(id => id.length > 0);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (wechatIds.length === 0 || !reason.trim()) return;
+    
+    setConfirmOpen(true);
+  };
+
+  const executeBatchAction = async () => {
+    setConfirmOpen(false);
+    setSaving(true);
+    setResult(null);
+    try {
+      const res = await fetch(`${__API_ENDPOINT__}/api/admin/batch/${action}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ wechat_ids: wechatIds, reason }),
+      });
+      const data = await res.json();
+      setResult(data);
+      if (data.success) {
+        setInput('');
+        setReason('');
+        onUpdate();
+      }
+    } catch (error) {
+      setResult({ success: false, message: `Failed to batch ${action} accounts: ${error}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-indigo-600" />
+          Batch Operations
+        </h3>
+        <p className="text-sm text-slate-500 mb-6">
+          Perform actions on multiple WeChat IDs at once. Enter one WeChat ID per line or separate them with commas.
+        </p>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+              WeChat IDs ({wechatIds.length} parsed)
+            </label>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="wxid_12345&#10;wxid_67890"
+              className="block w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-mono"
+              rows={6}
+              required
+            />
+          </div>
+          
+          <div>
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Action</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={action === 'verify'}
+                  onChange={() => setAction('verify')}
+                  className="text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-700">Verify Accounts</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={action === 'blacklist'}
+                  onChange={() => setAction('blacklist')}
+                  className="text-red-600 focus:ring-red-500"
+                />
+                <span className="text-sm font-medium text-slate-700">Blacklist Accounts</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Reason (Required)</label>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={`Reason for batch ${action}...`}
+              className="block w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              required
+            />
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={saving || wechatIds.length === 0 || !reason.trim()}
+              className={clsx(
+                "w-full py-3 px-4 text-white font-medium rounded-xl shadow-sm transition-colors disabled:opacity-50",
+                action === 'verify' ? "bg-indigo-600 hover:bg-indigo-700" : "bg-red-600 hover:bg-red-700"
+              )}
+            >
+              {saving ? 'Processing...' : `Batch ${action === 'verify' ? 'Verify' : 'Blacklist'} ${wechatIds.length} Accounts`}
+            </button>
+          </div>
+        </form>
+
+        {result && (
+          <div className={clsx("mt-6 p-4 rounded-xl border", result.success ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200")}>
+            <h4 className={clsx("text-sm font-bold mb-1", result.success ? "text-emerald-800" : "text-red-800")}>
+              {result.success ? 'Success' : 'Error'}
+            </h4>
+            <p className={clsx("text-sm", result.success ? "text-emerald-700" : "text-red-700")}>{result.message}</p>
+            {result.results && result.results.length > 0 && (
+              <div className="mt-3 max-h-40 overflow-y-auto">
+                <ul className="text-xs space-y-1">
+                  {result.results.map((r, i) => (
+                    <li key={i} className={r.success ? "text-emerald-600" : "text-red-600"}>
+                      <span className="font-mono">{r.wechat_id}</span>: {r.message || (r.success ? 'Success' : 'Failed')}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <ConfirmDialog
+        isOpen={confirmOpen}
+        title={`Batch ${action === 'verify' ? 'Verify' : 'Blacklist'} Accounts`}
+        message={`Are you sure you want to ${action} ${wechatIds.length} accounts?`}
+        onConfirm={executeBatchAction}
+        onCancel={() => setConfirmOpen(false)}
+        confirmText={action === 'verify' ? 'Verify' : 'Blacklist'}
+        isDangerous={action === 'blacklist'}
+      />
     </div>
   );
 }
