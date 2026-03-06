@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ShieldCheck, Lock, Users, Server, Github, ExternalLink } from 'lucide-react';
+import { ShieldCheck, Lock, Users, Server, Github, ExternalLink, Shield } from 'lucide-react';
 
 export default function AboutPage() {
   return (
@@ -44,7 +44,7 @@ export default function AboutPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="grid sm:grid-cols-2 gap-6"
+          className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6"
         >
           <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -89,6 +89,27 @@ export default function AboutPage() {
               <li className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
                 <span>Reliable infrastructure backed by PiTrick Technology.</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <Shield className="w-5 h-5 text-purple-600" />
+              For Group Owners
+            </h3>
+            <ul className="space-y-3 text-slate-600 text-sm">
+              <li className="flex items-start gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" />
+                <span>Use this service to verify student status before they join your group.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" />
+                <span>Discord server owners can contact the developer to set up their server as a trusted verification source.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" />
+                <span>Members with a verified role in a trusted server can be verified easily.</span>
               </li>
             </ul>
           </div>
