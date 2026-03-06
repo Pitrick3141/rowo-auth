@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ShieldCheck, Lock, Users, Server, Github, ExternalLink, Shield } from 'lucide-react';
+import { ShieldCheck, Lock, Users, Server, Github, ExternalLink, Shield, Mail } from 'lucide-react';
 
 export default function AboutPage() {
   return (
@@ -16,9 +16,16 @@ export default function AboutPage() {
         <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-4">
           About ROwO Auth
         </h1>
-        <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+        <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-6">
           A secure, centralized identity verification system designed to streamline student authentication across multiple platforms and services.
         </p>
+        <a
+          href="mailto:dev@rowo.link"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors shadow-sm"
+        >
+          <Mail className="w-5 h-5" />
+          Contact Developer
+        </a>
       </motion.div>
 
       <div className="space-y-12">
@@ -44,81 +51,89 @@ export default function AboutPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6"
+          className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200"
         >
-          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Users className="w-5 h-5 text-emerald-600" />
-              For Users
-            </h3>
-            <ul className="space-y-3 text-slate-600 text-sm">
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                <span>Verify your student status once, use it everywhere.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                <span>Multiple verification methods (Email, ADFS, Manual).</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                <span>Privacy-first approach to data handling.</span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 relative overflow-hidden">
-            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center">
-              <span className="bg-slate-900 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg transform -rotate-6">
-                Coming Soon
-              </span>
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Server className="w-5 h-5 text-blue-600" />
-              For Developers
-            </h3>
-            <ul className="space-y-3 text-slate-600 text-sm">
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                <span>Simple API for querying verification status.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                <span>Reduce duplicate verification efforts.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                <span>Reliable infrastructure backed by PiTrick Technology.</span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Shield className="w-5 h-5 text-purple-600" />
-              For Group Owners
-            </h3>
-            <ul className="space-y-3 text-slate-600 text-sm">
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" />
-                <span>Use this service to verify student status before they join your group.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" />
-                <span>Discord server owners can contact the developer to set up their server as a trusted verification source.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" />
-                <span>Members with a verified role in a trusted server can be verified easily.</span>
-              </li>
-            </ul>
-          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+            <Users className="w-6 h-6 text-emerald-600" />
+            For Users
+          </h2>
+          <ul className="space-y-4 text-slate-600">
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Verify your student status once, use it everywhere.</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Multiple verification methods (Email, ADFS, Manual).</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Privacy-first approach to data handling.</span>
+            </li>
+          </ul>
         </motion.section>
 
         <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
+          className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200"
+        >
+          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+            <Shield className="w-6 h-6 text-purple-600" />
+            For Group Owners
+          </h2>
+          <ul className="space-y-4 text-slate-600">
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-purple-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Use this service to verify student status before they join your group.</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-purple-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Discord server owners can contact the developer to set up their server as a trusted verification source.</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-purple-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Members with a verified role in a trusted server can be verified easily.</span>
+            </li>
+          </ul>
+        </motion.section>
+
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 relative overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center">
+            <span className="bg-slate-900 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg transform -rotate-6">
+              Coming Soon
+            </span>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+            <Server className="w-6 h-6 text-blue-600" />
+            For Developers
+          </h2>
+          <ul className="space-y-4 text-slate-600">
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-blue-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Simple API for querying verification status.</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-blue-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Reduce duplicate verification efforts.</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-blue-500 mt-2.5 shrink-0" />
+              <span className="text-lg">Reliable infrastructure backed by PiTrick Technology.</span>
+            </li>
+          </ul>
+        </motion.section>
+
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
           className="bg-slate-900 rounded-3xl p-8 text-white shadow-lg overflow-hidden relative"
         >
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] z-20 flex items-center justify-center">
