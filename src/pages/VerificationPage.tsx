@@ -23,7 +23,7 @@ export default function VerificationPage() {
   const [searchParams] = useSearchParams();
   const initialWechatId = searchParams.get('wechat_id') || '';
 
-  const [activeMethod, setActiveMethod] = useState<VerificationMethod>('email');
+  const [activeMethod, setActiveMethod] = useState<VerificationMethod>('adfs');
   const [wechatId, setWechatId] = useState(initialWechatId);
   const [emailPrefix, setEmailPrefix] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
