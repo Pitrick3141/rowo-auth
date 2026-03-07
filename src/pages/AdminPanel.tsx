@@ -323,8 +323,8 @@ export default function AdminPanel() {
                   ) : (
                     filteredAccounts.map((account) => (
                       <tr key={account.wechat_id} className={clsx("hover:bg-slate-50 transition-colors", account.manual_status === 'pending' && "bg-amber-50/50")}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-slate-900 flex items-center gap-2">
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-slate-900 flex flex-wrap items-center gap-2 break-all">
                             {account.wechat_id}
                             {account.manual_status === 'pending' && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
@@ -339,9 +339,9 @@ export default function AdminPanel() {
                           </div>
                           <div className="text-xs text-slate-500">{format(new Date(account.verification_time), 'MMM d, yyyy')}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-slate-900">{account.student_name || account.email || account.discord_id || 'N/A'}</div>
-                          <div className="text-xs text-slate-500">{account.student_id || account.faculty || ''}</div>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-slate-900 break-all">{account.student_name || account.email || account.discord_id || 'N/A'}</div>
+                          <div className="text-xs text-slate-500 break-all">{account.student_id || account.faculty || ''}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
@@ -603,26 +603,26 @@ function AccountModal({
           <div className="mb-6">
             <h3 className="text-sm font-medium text-slate-500 mb-2">Account Details</h3>
             <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-              <div className="flex justify-between">
-                <span className="text-sm text-slate-500">WeChat ID</span>
-                <span className="text-sm font-medium text-slate-900">{account.wechat_id}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-sm text-slate-500 shrink-0">WeChat ID</span>
+                <span className="text-sm font-medium text-slate-900 break-all text-right">{account.wechat_id}</span>
               </div>
               {account.student_name && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Name</span>
-                  <span className="text-sm font-medium text-slate-900">{account.student_name}</span>
+                <div className="flex justify-between gap-4">
+                  <span className="text-sm text-slate-500 shrink-0">Name</span>
+                  <span className="text-sm font-medium text-slate-900 break-all text-right">{account.student_name}</span>
                 </div>
               )}
               {account.student_id && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Student ID</span>
-                  <span className="text-sm font-medium text-slate-900">{account.student_id}</span>
+                <div className="flex justify-between gap-4">
+                  <span className="text-sm text-slate-500 shrink-0">Student ID</span>
+                  <span className="text-sm font-medium text-slate-900 break-all text-right">{account.student_id}</span>
                 </div>
               )}
               {account.email && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-500">Email</span>
-                  <span className="text-sm font-medium text-slate-900">{account.email}</span>
+                <div className="flex justify-between gap-4">
+                  <span className="text-sm text-slate-500 shrink-0">Email</span>
+                  <span className="text-sm font-medium text-slate-900 break-all text-right">{account.email}</span>
                 </div>
               )}
               {account.manual_admin && (
@@ -1033,8 +1033,8 @@ function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; 
               ) : (
                 blacklist.map((item) => (
                   <tr key={item.wechat_id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-slate-900">{item.wechat_id}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600 max-w-xs truncate" title={item.reason}>{item.reason}</td>
+                    <td className="px-6 py-4 font-mono text-sm text-slate-900 break-all">{item.wechat_id}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600 max-w-xs break-words" title={item.reason}>{item.reason}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{item.added_by}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{format(new Date(item.added_at), 'MMM d, yyyy')}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -1194,7 +1194,7 @@ function BatchTab({ token, onUpdate }: { token: string; onUpdate: () => void }) 
               <div className="mt-3 max-h-40 overflow-y-auto">
                 <ul className="text-xs space-y-1">
                   {result.results.map((r, i) => (
-                    <li key={i} className={r.success ? "text-emerald-600" : "text-red-600"}>
+                    <li key={i} className={clsx("break-all", r.success ? "text-emerald-600" : "text-red-600")}>
                       <span className="font-mono">{r.wechat_id}</span>: {r.message || (r.success ? 'Success' : 'Failed')}
                     </li>
                   ))}
