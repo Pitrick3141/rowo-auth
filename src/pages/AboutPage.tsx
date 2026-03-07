@@ -64,7 +64,7 @@ export default function AboutPage() {
             </li>
             <li className="flex items-start gap-3">
               <div className="w-2 h-2 rounded-full bg-emerald-500 mt-2.5 shrink-0" />
-              <span className="text-lg">Multiple verification methods (Email, ADFS, Manual).</span>
+              <span className="text-lg">Multiple verification methods (ADFS, Email, Discord, Manual).</span>
             </li>
             <li className="flex items-start gap-3">
               <div className="w-2 h-2 rounded-full bg-emerald-500 mt-2.5 shrink-0" />

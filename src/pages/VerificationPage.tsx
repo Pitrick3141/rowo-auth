@@ -113,7 +113,7 @@ export default function VerificationPage() {
       title: 'ADFS Login',
       description: 'Primary and recommended method. Login with your university credentials.',
       icon: Shield,
-      disabled: true,
+      disabled: false,
       color: 'bg-indigo-100 text-indigo-600',
       border: 'border-indigo-200',
       activeBorder: 'border-indigo-500 ring-1 ring-indigo-500',
@@ -272,7 +272,7 @@ export default function VerificationPage() {
 
             <form onSubmit={handleVerify} className="flex-1 flex flex-col">
               <div className="space-y-6 flex-1">
-                {activeMethod !== 'discord' && (
+                {activeMethod !== 'discord' && activeMethod !== 'adfs' && (
                   <div>
                     <label htmlFor="wechatId" className="block text-sm font-medium text-slate-700 mb-2">
                       WeChat ID
@@ -348,9 +348,21 @@ export default function VerificationPage() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"
+                      className="space-y-6"
                     >
-                      You will be redirected to the university's ADFS login page. After successful authentication, you will be returned here to complete the process.
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800">
+                        You will be redirected to the university's ADFS login page. After successful authentication, you will be returned here to complete the process.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.location.href = 'https://csclub.uwaterloo.ca/~y445wang/';
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow-sm transition-colors"
+                      >
+                        <Shield className="w-5 h-5" />
+                        Login with ADFS
+                      </button>
                     </motion.div>
                   )}
 
@@ -460,7 +472,7 @@ export default function VerificationPage() {
               </div>
 
               <div className="mt-8 pt-6 border-t border-slate-100">
-                {activeMethod !== 'discord' && (
+                {activeMethod !== 'discord' && activeMethod !== 'adfs' && (
                   <button
                     type="submit"
                     disabled={status === 'loading'}
