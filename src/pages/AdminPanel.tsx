@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, Search, MoreVertical, X, AlertTriangle, ShieldOff, Save, ShieldCheck, Key, CheckCircle, Info, Plus, Edit2, Trash2, RotateCcw } from 'lucide-react';
+import { ShieldAlert, Search, MoreVertical, X, AlertTriangle, ShieldOff, Save, ShieldCheck, Key, CheckCircle, Info, Plus, Edit2, Trash2, RotateCcw, Pencil, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
 import ReactMarkdown from 'react-markdown';
@@ -337,7 +337,7 @@ export default function AdminPanel() {
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-slate-500">{format(new Date(account.verification_time), 'MMM d, yyyy')}</div>
+                          <div className="text-xs text-slate-500">{format(new Date(account.verification_time.endsWith('Z') ? account.verification_time : account.verification_time + 'Z'), 'MMM d, yyyy')}</div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-slate-900 break-all">{account.student_name || account.email || account.discord_id || 'N/A'}</div>
@@ -629,7 +629,7 @@ function AccountModal({
                 <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
                   <span className="text-sm text-slate-500">Processed By</span>
                   <span className="text-sm font-medium text-slate-900">
-                    {account.manual_admin} on {account.manual_time ? format(new Date(account.manual_time), 'MMM d, yyyy') : 'Unknown'}
+                    {account.manual_admin} on {account.manual_time ? format(new Date(account.manual_time.endsWith('Z') ? account.manual_time : account.manual_time + 'Z'), 'MMM d, yyyy') : 'Unknown'}
                   </span>
                 </div>
               )}
@@ -643,7 +643,7 @@ function AccountModal({
                 <div className="flex flex-col border-t border-red-100 pt-2 mt-2">
                   <div className="flex justify-between">
                     <span className="text-sm text-red-600 font-bold">Blacklisted</span>
-                    <span className="text-xs text-slate-500">{format(new Date(account.blacklist.added_at), 'MMM d, yyyy')}</span>
+                    <span className="text-xs text-slate-500">{format(new Date(account.blacklist.added_at.endsWith('Z') ? account.blacklist.added_at : account.blacklist.added_at + 'Z'), 'MMM d, yyyy')}</span>
                   </div>
                   <p className="text-sm text-red-700 mt-1 bg-red-50 p-2 rounded-lg">
                     Reason: {account.blacklist.reason}
@@ -761,6 +761,8 @@ function AccountModal({
                       <option value="warning">Warning</option>
                       <option value="error">Error</option>
                       <option value="checkmark">Checkmark</option>
+                      <option value="pencil">Pencil</option>
+                      <option value="refresh">Refresh</option>
                     </select>
                   </div>
                 </div>
@@ -799,7 +801,14 @@ function AccountModal({
             ) : (
               <div className="space-y-3">
                 {infoItems.map(info => {
-                  const IconComp = info.icon === 'warning' ? AlertTriangle : info.icon === 'error' ? X : info.icon === 'checkmark' ? CheckCircle : Info;
+                  const IconComp = {
+                    warning: AlertTriangle,
+                    error: X,
+                    checkmark: CheckCircle,
+                    pencil: Pencil,
+                    refresh: RefreshCw,
+                    info: Info
+                  }[info.icon as any] || Info;
                   const colorClasses = {
                     blue: 'bg-blue-50 border-blue-200 text-blue-800',
                     orange: 'bg-orange-50 border-orange-200 text-orange-800',
@@ -848,7 +857,7 @@ function AccountModal({
                       </div>
                       <div className="mt-2 pt-2 border-t border-black/5 flex justify-between text-[10px] opacity-70">
                         <span>By {info.creator}</span>
-                        <span>{format(new Date(info.updated_at), 'MMM d, yyyy HH:mm')}</span>
+                        <span>{format(new Date(info.updated_at.endsWith('Z') ? info.updated_at : info.updated_at + 'Z'), 'MMM d, yyyy HH:mm')}</span>
                       </div>
                     </div>
                   );
@@ -1036,7 +1045,7 @@ function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; 
                     <td className="px-6 py-4 font-mono text-sm text-slate-900 break-all">{item.wechat_id}</td>
                     <td className="px-6 py-4 text-sm text-slate-600 max-w-xs break-words" title={item.reason}>{item.reason}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{item.added_by}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{format(new Date(item.added_at), 'MMM d, yyyy')}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{format(new Date(item.added_at.endsWith('Z') ? item.added_at : item.added_at + 'Z'), 'MMM d, yyyy')}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                         onClick={() => handleRemove(item.wechat_id)}

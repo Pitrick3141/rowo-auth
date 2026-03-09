@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, CheckCircle2, XCircle, Clock, Shield, AlertTriangle, Info, ShieldAlert } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, Clock, Shield, AlertTriangle, Info, ShieldAlert, Pencil, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
@@ -242,7 +242,7 @@ export default function LandingPage() {
                         <div>
                           <p className="text-xs text-slate-500 uppercase font-semibold tracking-wider">Time</p>
                           <p className="font-medium">
-                            {format(new Date(result.account.verification_time), 'PPp')}
+                            {format(new Date(result.account.verification_time.endsWith('Z') ? result.account.verification_time : result.account.verification_time + 'Z'), 'PPp')}
                           </p>
                         </div>
                       </div>
@@ -252,7 +252,14 @@ export default function LandingPage() {
                       <div className="mt-8 space-y-4">
                         <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Additional Information</h3>
                         {result.info.map(info => {
-                          const IconComp = info.icon === 'warning' ? AlertTriangle : info.icon === 'error' ? XCircle : info.icon === 'checkmark' ? CheckCircle2 : Info;
+                          const IconComp = {
+                            warning: AlertTriangle,
+                            error: XCircle,
+                            checkmark: CheckCircle2,
+                            pencil: Pencil,
+                            refresh: RefreshCw,
+                            info: Info
+                          }[info.icon as any] || Info;
                           const colorClasses = {
                             blue: 'bg-blue-50 border-blue-200 text-blue-800',
                             orange: 'bg-orange-50 border-orange-200 text-orange-800',
