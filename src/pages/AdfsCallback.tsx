@@ -34,8 +34,15 @@ export default function AdfsCallback() {
         }),
       });
       const data = await res.json();
-
       if (data.success) {
+        if (data.reverified) {
+          setStatus('success');
+          setMessage('Successfully reverified! Redirecting to rename page...');
+          setTimeout(() => {
+            navigate(`/rename?token=${data.rename_token}&expiry=${data.rename_token_expires_at}`);
+          }, 1500);
+          return;
+        }
         setStatus('success');
         setMessage(data.message || 'Your WeChat account is now verified with ADFS!');
       } else {

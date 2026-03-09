@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, Mail, MessageSquare, AlertCircle, CheckCircle2, ChevronRight, Lock } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 const DiscordIcon = ({ className }: { className?: string }) => (
   <svg 
@@ -21,6 +21,7 @@ const UNIVERSITY_DOMAIN = '@uwaterloo.ca';
 
 export default function VerificationPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const initialWechatId = searchParams.get('wechat_id') || '';
 
   const [activeMethod, setActiveMethod] = useState<VerificationMethod>('adfs');
@@ -176,7 +177,7 @@ export default function VerificationPage() {
           break;
         case 'manual':
           endpoint = `${__API_ENDPOINT__}/api/verify/manual`;
-          body = { ...body, notes: manualNotes || 'Requested manual verification.' };
+          body = { ...body, reason: manualNotes || 'Requested manual verification.' };
           break;
       }
 
@@ -188,6 +189,14 @@ export default function VerificationPage() {
 
       const data = await res.json();
       if (data.success) {
+        if (data.reverified) {
+          setStatus('success');
+          setMessage('Successfully reverified! Redirecting to rename page...');
+          setTimeout(() => {
+            navigate(`/rename?token=${data.rename_token}&expiry=${data.rename_token_expires_at}`);
+          }, 1500);
+          return;
+        }
         setStatus('success');
         setMessage(data.message);
         // Clear form after success

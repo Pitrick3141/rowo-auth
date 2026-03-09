@@ -84,6 +84,14 @@ export default function DiscordCallback() {
       const data = await res.json();
 
       if (data.success) {
+        if (data.reverified) {
+          setStatus('success');
+          setMessage('Successfully reverified! Redirecting to rename page...');
+          setTimeout(() => {
+            navigate(`/rename?token=${data.rename_token}&expiry=${data.rename_token_expires_at}`);
+          }, 1500);
+          return;
+        }
         setStatus('success');
         setMessage('Successfully verified! Your WeChat account is now linked to your student status.');
       } else {

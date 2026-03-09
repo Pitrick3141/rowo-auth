@@ -12,6 +12,7 @@ import AdfsCallback from './pages/AdfsCallback';
 import AdminPanel from './pages/AdminPanel';
 import AboutPage from './pages/AboutPage';
 import PrivacyPage from './pages/PrivacyPage';
+import RenamePage from './pages/RenamePage';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/rename" element={<RenamePage />} />
         </Routes>
       </Layout>
     </Router>
