@@ -26,6 +26,7 @@ interface AccountData {
   manual_reason?: string;
   manual_admin?: string;
   manual_time?: string;
+  reverified_at?: string;
 }
 
 export default function LandingPage() {
@@ -246,6 +247,17 @@ export default function LandingPage() {
                           </p>
                         </div>
                       </div>
+                      {result.account.reverified_at && (
+                        <div className="flex items-center gap-3 text-slate-700">
+                          <RefreshCw className="w-5 h-5 text-slate-400" />
+                          <div>
+                            <p className="text-xs text-slate-500 uppercase font-semibold tracking-wider">Re-verified</p>
+                            <p className="font-medium">
+                              {format(new Date(result.account.reverified_at.endsWith('Z') ? result.account.reverified_at : result.account.reverified_at + 'Z'), 'PPp')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {result.info && result.info.length > 0 && (

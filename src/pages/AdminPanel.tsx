@@ -33,6 +33,7 @@ interface AccountData {
   manual_reason?: string;
   manual_admin?: string;
   manual_time?: string;
+  reverified_at?: string;
   blacklisted?: boolean;
   blacklist?: null | {
     wechat_id: string;
@@ -338,6 +339,11 @@ export default function AdminPanel() {
                             )}
                           </div>
                           <div className="text-xs text-slate-500">{format(new Date(account.verification_time.endsWith('Z') ? account.verification_time : account.verification_time + 'Z'), 'MMM d, yyyy')}</div>
+                          {account.reverified_at && (
+                            <div className="text-[10px] text-indigo-600 font-medium mt-0.5">
+                              Re-verified: {format(new Date(account.reverified_at.endsWith('Z') ? account.reverified_at : account.reverified_at + 'Z'), 'MMM d, yyyy')}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-slate-900 break-all">{account.student_name || account.email || account.discord_id || 'N/A'}</div>
@@ -623,6 +629,14 @@ function AccountModal({
                 <div className="flex justify-between gap-4">
                   <span className="text-sm text-slate-500 shrink-0">Email</span>
                   <span className="text-sm font-medium text-slate-900 break-all text-right">{account.email}</span>
+                </div>
+              )}
+              {account.reverified_at && (
+                <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
+                  <span className="text-sm text-slate-500">Last Re-verified</span>
+                  <span className="text-sm font-medium text-indigo-600">
+                    {format(new Date(account.reverified_at.endsWith('Z') ? account.reverified_at : account.reverified_at + 'Z'), 'MMM d, yyyy')}
+                  </span>
                 </div>
               )}
               {account.manual_admin && (
