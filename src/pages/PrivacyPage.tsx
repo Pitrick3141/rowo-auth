@@ -100,9 +100,22 @@ export default function PrivacyPage() {
             <Trash2 className="w-6 h-6 text-red-600" />
             Data Removal
           </h2>
-          <p className="text-slate-600 leading-relaxed">
+          <p className="text-slate-600 leading-relaxed mb-4">
             You have full control over your data. You can contact our support team at any time to request the complete removal of your information from our database.
           </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+            <h3 className="text-sm font-bold text-amber-900 mb-2 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-amber-600" />
+              Note on Data Access
+            </h3>
+            <p className="text-sm text-amber-800">
+              While you have full control over your data, we cannot explicitly provide you with the raw hashed strings stored in our database. This restriction is a security measure to prevent <strong>Hash Oracle Attacks</strong>. Providing these hashes could allow an attacker to perform offline brute-force or dictionary attacks to deanonymize other users in the system.
+              <br />
+              <a href="https://en.wikipedia.org/wiki/Oracle_attack" target="_blank" rel="noopener noreferrer" className="text-amber-900 hover:underline font-medium mt-2 inline-block">
+                Learn more about Oracle Attacks &rarr;
+              </a>
+            </p>
+          </div>
           <div className="mt-6">
             <a
               href="mailto:dev@rowo.link"

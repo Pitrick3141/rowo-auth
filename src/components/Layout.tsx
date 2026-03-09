@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShieldCheck, UserCheck, ShieldAlert, Info } from 'lucide-react';
+import { ShieldCheck, UserCheck, ShieldAlert, Info, HelpCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -9,6 +9,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { path: '/', label: 'Query', icon: ShieldCheck },
     { path: '/verify', label: 'Verify Identity', icon: UserCheck },
+    { path: '/faq', label: 'FAQ', icon: HelpCircle },
     { path: '/about', label: 'About', icon: Info },
   ];
 

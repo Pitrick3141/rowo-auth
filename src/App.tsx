@@ -13,6 +13,7 @@ import AdminPanel from './pages/AdminPanel';
 import AboutPage from './pages/AboutPage';
 import PrivacyPage from './pages/PrivacyPage';
 import RenamePage from './pages/RenamePage';
+import FAQPage from './pages/FAQPage';
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/rename" element={<RenamePage />} />
+          <Route path="/faq" element={<FAQPage />} />
         </Routes>
       </Layout>
     </Router>
