@@ -47,8 +47,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <footer className="bg-white border-t border-slate-200 py-6 mt-auto">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-slate-500">
-          &copy; {new Date().getFullYear()} PiTrick Technology. All rights reserved.
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
+          <div>
+            &copy; {new Date().getFullYear()} PiTrick Technology. All rights reserved.
+          </div>
+          <div className="flex items-center gap-4">
+            <Link to="/privacy" className="hover:text-slate-900 transition-colors">
+              Privacy Policy
+            </Link>
+          </div>
         </div>
       </footer>
     </div>

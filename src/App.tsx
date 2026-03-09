@@ -11,6 +11,7 @@ import DiscordCallback from './pages/DiscordCallback';
 import AdfsCallback from './pages/AdfsCallback';
 import AdminPanel from './pages/AdminPanel';
 import AboutPage from './pages/AboutPage';
+import PrivacyPage from './pages/PrivacyPage';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/verify/adfs/callback" element={<AdfsCallback />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
         </Routes>
       </Layout>
     </Router>
