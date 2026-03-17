@@ -238,9 +238,11 @@ export default function VerificationPage() {
             const Icon = method.icon;
             const isActive = activeMethod === method.id;
             return (
-              <button
+              <motion.button
                 key={method.id}
                 disabled={method.disabled}
+                whileHover={method.disabled ? {} : { scale: 1.02 }}
+                whileTap={method.disabled ? {} : { scale: 0.98 }}
                 onClick={() => setActiveMethod(method.id as VerificationMethod)}
                 className={clsx(
                   'w-full text-left p-4 rounded-2xl border transition-all duration-200 flex items-start gap-4 relative overflow-hidden',
@@ -267,7 +269,7 @@ export default function VerificationPage() {
                     <ChevronRight className="w-5 h-5 text-slate-400" />
                   </div>
                 )}
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -325,14 +327,16 @@ export default function VerificationPage() {
                           <div className="inline-flex items-center px-4 py-3 rounded-r-xl border border-l-0 border-slate-300 bg-slate-50 text-slate-500 sm:text-sm font-medium">
                             {UNIVERSITY_DOMAIN}
                           </div>
-                          <button
+                          <motion.button
                             type="button"
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
                             onClick={handleSendCode}
                             disabled={sendingCode || !wechatId.trim() || !emailPrefix.trim()}
                             className="ml-3 shrink-0 px-4 py-2 border border-slate-300 rounded-xl text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                           >
                             {sendingCode ? 'Sending...' : 'Send Code'}
-                          </button>
+                          </motion.button>
                         </div>
                       </div>
                       <div>
@@ -362,8 +366,10 @@ export default function VerificationPage() {
                       <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800">
                         You will be redirected to the university's ADFS login page. After successful authentication, you will be returned here to complete the process.
                       </div>
-                      <button
+                      <motion.button
                         type="button"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                         onClick={() => {
                           window.location.href = 'https://csclub.uwaterloo.ca/~y445wang/';
                         }}
@@ -371,7 +377,7 @@ export default function VerificationPage() {
                       >
                         <Shield className="w-5 h-5" />
                         Login with ADFS
-                      </button>
+                      </motion.button>
                     </motion.div>
                   )}
 
@@ -385,8 +391,10 @@ export default function VerificationPage() {
                       <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-sm text-violet-800">
                         Clicking verify will redirect you to Discord to authenticate. Ensure you are already verified in a trusted student server.
                       </div>
-                      <button
+                      <motion.button
                         type="button"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                         onClick={() => {
                           const clientId = '1412335316395622432';
                           const redirectUri = encodeURIComponent(`${window.location.origin}/verify/discord/callback`);
@@ -397,7 +405,7 @@ export default function VerificationPage() {
                       >
                         <DiscordIcon className="w-5 h-5" />
                         Connect with Discord
-                      </button>
+                      </motion.button>
 
                       <div className="pt-4 border-t border-slate-100">
                         <button
@@ -482,13 +490,15 @@ export default function VerificationPage() {
 
               <div className="mt-8 pt-6 border-t border-slate-100">
                 {activeMethod !== 'discord' && activeMethod !== 'adfs' && (
-                  <button
+                  <motion.button
                     type="submit"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                     disabled={status === 'loading'}
                     className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {status === 'loading' ? 'Processing...' : 'Verify Now'}
-                  </button>
+                  </motion.button>
                 )}
 
                 {status === 'success' && (
