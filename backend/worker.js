@@ -1,0 +1,1770 @@
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  });
+}
+
+async function parseJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
+
+async function queryFirst(env, sql, params = []) {
+  return env.auth_database.prepare(sql).bind(...params).first();
+}
+
+async function queryAll(env, sql, params = []) {
+  const result = await env.auth_database.prepare(sql).bind(...params).all();
+  return result.results || [];
+}
+
+async function execRun(env, sql, params = []) {
+  return env.auth_database.prepare(sql).bind(...params).run();
+}
+
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function generateAdfsCode() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateRenameToken() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const RENAME_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+async function createRenameToken(env, wechatId) {
+  const token = generateRenameToken();
+  const tokenHash = await sha256Hex(token);
+  const expiresAt = new Date(Date.now() + RENAME_TOKEN_TTL_MS).toISOString();
+  await execRun(
+    env,
+    "INSERT INTO rename_tokens (token_hash, wechat_id, expires_at, created_at) VALUES (?, ?, ?, datetime('now'))",
+    [tokenHash, wechatId, expiresAt]
+  );
+  return { token, expiresAt };
+}
+
+async function consumeRenameToken(env, token) {
+  const tokenHash = await sha256Hex(String(token));
+  const row = await queryFirst(env, 'SELECT wechat_id, expires_at FROM rename_tokens WHERE token_hash = ?', [tokenHash]);
+  if (!row) return null;
+  if (new Date(row.expires_at) < new Date()) {
+    await execRun(env, 'DELETE FROM rename_tokens WHERE token_hash = ?', [tokenHash]);
+    return null;
+  }
+  await execRun(env, 'DELETE FROM rename_tokens WHERE token_hash = ?', [tokenHash]);
+  return row.wechat_id;
+}
+
+async function invalidateRenameToken(env, token) {
+  const tokenHash = await sha256Hex(String(token));
+  await execRun(env, 'DELETE FROM rename_tokens WHERE token_hash = ?', [tokenHash]);
+}
+
+async function sha256Hex(input) {
+  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hash))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/** Hash sensitive data before storage. Uses SENSITIVE_DATA_HASH_SECRET; same value + field yields same hash for uniqueness. Returns null for empty value. */
+async function hashSensitive(env, field, value) {
+  if (value == null || String(value).trim() === '') return null;
+  const secret = env.SENSITIVE_DATA_HASH_SECRET;
+  if (!secret) throw new Error('SENSITIVE_DATA_HASH_SECRET is required for hashing sensitive data.');
+  const payload = String(secret) + field + ':' + String(value).trim();
+  return sha256Hex(payload);
+}
+
+async function hmacSha256Raw(key, message) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    key,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(message));
+  return new Uint8Array(signature);
+}
+
+/** Base64url encode bytes (no padding, URL-safe). Used for JWT. */
+function base64UrlEncode(bytes) {
+  const bin = Array.from(bytes, (b) => String.fromCodePoint(b)).join('');
+  const b64 = btoa(bin);
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Base64url decode to string (for JSON payload). */
+function base64UrlDecode(str) {
+  let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4;
+  if (pad) b64 += '===='.slice(0, 4 - pad);
+  return atob(b64);
+}
+
+/**
+ * Verify JWT for ADFS create-code: must be Bearer token, HS256, valid signature, not expired.
+ * Uses env.ADFS_JWT_SECRET. Returns true if valid; throws or returns false otherwise.
+ */
+async function verifyAdfsCreateCodeJwt(env, authHeader) {
+  const secret = env.ADFS_JWT_SECRET;
+  if (!secret || typeof secret !== 'string') return false;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
+  const token = authHeader.slice(7).trim();
+  if (!token) return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const payloadJson = base64UrlDecode(parts[1]);
+    const payload = JSON.parse(payloadJson);
+    if (payload.exp != null && typeof payload.exp === 'number' && payload.exp < Math.floor(Date.now() / 1000)) return false;
+    const signingInput = `${parts[0]}.${parts[1]}`;
+    const keyBytes = new TextEncoder().encode(secret);
+    const sigBytes = await hmacSha256Raw(keyBytes, signingInput);
+    const expectedSig = base64UrlEncode(sigBytes);
+    if (parts[2] !== expectedSig) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatAmzDate(date) {
+  return date.toISOString().replace(/[:-]|\.\d{3}/g, '');
+}
+
+async function getSignatureKey(secretAccessKey, dateStamp, region, service) {
+  const kDate = await hmacSha256Raw(new TextEncoder().encode(`AWS4${secretAccessKey}`), dateStamp);
+  const kRegion = await hmacSha256Raw(kDate, region);
+  const kService = await hmacSha256Raw(kRegion, service);
+  return hmacSha256Raw(kService, 'aws4_request');
+}
+
+async function sendVerificationEmailWithSes(env, toEmail, code) {
+  const accessKeyId = env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = env.AWS_SECRET_ACCESS_KEY;
+  const region = env.AWS_REGION || 'us-east-1';
+  const fromEmail = env.SES_FROM_EMAIL;
+  const fromName = env.SES_FROM_NAME || 'Verification Service';
+
+  if (!accessKeyId || !secretAccessKey || !fromEmail) {
+    throw new Error('Missing SES configuration in Worker environment variables');
+  }
+
+  const endpoint = `https://email.${region}.amazonaws.com/`;
+  const host = `email.${region}.amazonaws.com`;
+  const service = 'ses';
+  const now = new Date();
+  const amzDate = formatAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+
+  const payload = new URLSearchParams({
+    Action: 'SendEmail',
+    Version: '2010-12-01',
+    'Source': `${fromName} <${fromEmail}>`,
+    'Destination.ToAddresses.member.1': toEmail,
+    'Message.Subject.Data': 'Your Verification Code',
+    'Message.Body.Text.Data': `Your verification code is: ${code}. This code expires in 10 minutes.`,
+  }).toString();
+
+  const contentType = 'application/x-www-form-urlencoded; charset=utf-8';
+  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\nx-amz-date:${amzDate}\n`;
+  const signedHeaders = 'content-type;host;x-amz-date';
+  const payloadHash = await sha256Hex(payload);
+  const canonicalRequest = `POST\n/\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+
+  const algorithm = 'AWS4-HMAC-SHA256';
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = `${algorithm}\n${amzDate}\n${credentialScope}\n${await sha256Hex(canonicalRequest)}`;
+
+  const signingKey = await getSignatureKey(secretAccessKey, dateStamp, region, service);
+  const signatureRaw = await hmacSha256Raw(signingKey, stringToSign);
+  const signature = Array.from(signatureRaw)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+
+  const authorizationHeader = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'content-type': contentType,
+      'x-amz-date': amzDate,
+      'authorization': authorizationHeader,
+    },
+    body: payload,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`SES send failed: ${response.status} ${errText}`);
+  }
+}
+
+async function consumeGlobalEmailSendQuota(env) {
+  const limit = Number(env.EMAIL_SENDS_PER_MINUTE || 30);
+  const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 30;
+  const minuteKey = new Date().toISOString().slice(0, 16);
+
+  await execRun(
+    env,
+    `
+      INSERT INTO email_send_rate_limits (minute_key, send_count, created_at, updated_at)
+      VALUES (?, 0, datetime('now'), datetime('now'))
+      ON CONFLICT(minute_key) DO NOTHING
+    `,
+    [minuteKey]
+  );
+
+  const updateResult = await execRun(
+    env,
+    `
+      UPDATE email_send_rate_limits
+      SET send_count = send_count + 1, updated_at = datetime('now')
+      WHERE minute_key = ? AND send_count < ?
+    `,
+    [minuteKey, normalizedLimit]
+  );
+
+  const changed = Number(updateResult?.meta?.changes || 0);
+  if (changed === 0) {
+    return {
+      allowed: false,
+      limit: normalizedLimit,
+      retryAfterSeconds: 60 - new Date().getSeconds(),
+    };
+  }
+
+  await execRun(
+    env,
+    `
+      DELETE FROM email_send_rate_limits
+      WHERE minute_key < ?
+    `,
+    [new Date(Date.now() - 5 * 60 * 1000).toISOString().slice(0, 16)]
+  );
+
+  return { allowed: true, limit: normalizedLimit };
+}
+
+async function checkVerified(env, wechatId) {
+  const account = await queryFirst(
+    env,
+    'SELECT verified_status FROM accounts WHERE wechat_id = ?',
+    [wechatId]
+  );
+  return account && Number(account.verified_status) === 1;
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function getEmailDomain(email) {
+  const atIndex = email.lastIndexOf('@');
+  if (atIndex <= 0 || atIndex === email.length - 1) {
+    return '';
+  }
+  return email.slice(atIndex + 1);
+}
+
+async function discordApiJson(url, options, errorPrefix) {
+  const response = await fetch(url, options);
+  const rawBody = await response.text();
+
+  let parsedBody;
+  try {
+    parsedBody = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    parsedBody = { raw: rawBody };
+  }
+
+  if (!response.ok) {
+    const message = parsedBody?.error_description || parsedBody?.message || rawBody || 'Unknown error';
+    throw new Error(`${errorPrefix}: ${response.status} ${message}`);
+  }
+
+  return parsedBody;
+}
+
+async function exchangeDiscordOauthCode(env, code) {
+  const clientId = env.DISCORD_CLIENT_ID;
+  const clientSecret = env.DISCORD_CLIENT_SECRET;
+  const redirectUri = env.DISCORD_REDIRECT_URI;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error('Missing Discord OAuth configuration in environment variables');
+  }
+
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: 'authorization_code',
+    code: String(code || ''),
+    redirect_uri: redirectUri,
+  }).toString();
+
+  const tokenResult = await discordApiJson(
+    'https://discord.com/api/oauth2/token',
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body,
+    },
+    'Discord OAuth token exchange failed'
+  );
+
+  if (!tokenResult?.access_token) {
+    throw new Error('Discord OAuth token exchange returned no access_token');
+  }
+
+  return tokenResult.access_token;
+}
+
+async function fetchDiscordIdentity(accessToken) {
+  return discordApiJson(
+    'https://discord.com/api/users/@me',
+    {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    },
+    'Discord identity lookup failed'
+  );
+}
+
+async function fetchDiscordGuildMember(env, discordId) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const guildId = env.DISCORD_GUILD_ID;
+
+  if (!botToken || !guildId) {
+    throw new Error('Missing Discord bot configuration in environment variables');
+  }
+
+  return discordApiJson(
+    `https://discord.com/api/guilds/${guildId}/members/${discordId}`,
+    {
+      method: 'GET',
+      headers: {
+        authorization: `Bot ${botToken}`,
+      },
+    },
+    'Discord guild membership check failed'
+  );
+}
+
+async function getCachedDiscordVerification(env, plainDiscordId) {
+  const hashedId = await hashSensitive(env, 'discord_id', plainDiscordId);
+  if (!hashedId) return null;
+  return queryFirst(
+    env,
+    `
+      SELECT discord_id, discord_name, guild_id, role_id
+      FROM discord_verified_identities
+      WHERE discord_id = ?
+      LIMIT 1
+    `,
+    [hashedId]
+  );
+}
+
+async function cacheDiscordVerification(env, discordId, discordName) {
+  const guildId = String(env.DISCORD_GUILD_ID || '').trim();
+  const roleId = String(env.DISCORD_REQUIRED_ROLE_ID || '').trim();
+  const hashedId = await hashSensitive(env, 'discord_id', discordId);
+  const hashedName = await hashSensitive(env, 'discord_name', discordName || '');
+  if (!hashedId) return;
+
+  await execRun(
+    env,
+    `
+      INSERT INTO discord_verified_identities (discord_id, discord_name, guild_id, role_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(discord_id) DO UPDATE SET
+        discord_name = excluded.discord_name,
+        guild_id = excluded.guild_id,
+        role_id = excluded.role_id,
+        updated_at = datetime('now')
+    `,
+    [hashedId, hashedName, guildId, roleId]
+  );
+}
+
+async function getActiveBlacklistRecord(env, wechatId) {
+  return queryFirst(
+    env,
+    `
+      SELECT wechat_id, reason, added_by, added_at
+      FROM account_blacklist
+      WHERE wechat_id = ? AND is_active = 1
+      LIMIT 1
+    `,
+    [wechatId]
+  );
+}
+
+function buildBlacklistPayload(blacklistRecord) {
+  if (!blacklistRecord) {
+    return null;
+  }
+
+  return {
+    wechat_id: blacklistRecord.wechat_id,
+    reason: blacklistRecord.reason,
+    added_by: blacklistRecord.added_by,
+    added_at: blacklistRecord.added_at,
+  };
+}
+
+async function ensureNotBlacklisted(env, wechatId) {
+  if (!wechatId) {
+    return null;
+  }
+
+  const blacklistRecord = await getActiveBlacklistRecord(env, wechatId);
+  if (!blacklistRecord) {
+    return null;
+  }
+
+  return jsonResponse(
+    {
+      success: false,
+      message: 'This account is in blacklist and cannot be verified.',
+      blacklisted: true,
+      blacklist: buildBlacklistPayload(blacklistRecord),
+    },
+    403
+  );
+}
+
+async function requireAuth(request, env) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
+  if (!token) {
+    return { response: jsonResponse({ success: false, message: 'Unauthorized' }, 401) };
+  }
+
+  const admin = await queryFirst(env, 'SELECT * FROM admins WHERE access_token = ?', [token]);
+  if (!admin) {
+    return { response: jsonResponse({ success: false, message: 'Invalid token' }, 401) };
+  }
+
+  return { admin };
+}
+
+async function requireAdmin(request, env) {
+  const auth = await requireAuth(request, env);
+  if (auth.response) {
+    return auth;
+  }
+  if (auth.admin.role !== 'admin') {
+    return { response: jsonResponse({ success: false, message: 'Forbidden: Admins only' }, 403) };
+  }
+  return auth;
+}
+
+function resolveAllowedOrigin(request, env) {
+  const configured = String(env.CORS_ALLOW_ORIGINS || '*')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (configured.length === 0 || configured.includes('*')) {
+    return '*';
+  }
+
+  const requestOrigin = request.headers.get('origin') || '';
+  if (requestOrigin && configured.includes(requestOrigin)) {
+    return requestOrigin;
+  }
+
+  return configured[0];
+}
+
+function buildCorsHeaders(request, env) {
+  const allowOrigin = resolveAllowedOrigin(request, env);
+  const requestedHeaders = request.headers.get('access-control-request-headers');
+
+  return {
+    'access-control-allow-origin': allowOrigin,
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'access-control-allow-headers': requestedHeaders || 'Content-Type, Authorization',
+    'access-control-max-age': '86400',
+    'vary': 'Origin, Access-Control-Request-Headers',
+  };
+}
+
+function withCors(response, request, env) {
+  const headers = new Headers(response.headers);
+  const corsHeaders = buildCorsHeaders(request, env);
+
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    headers.set(key, value);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function corsPreflightResponse(request, env) {
+  const headers = new Headers(buildCorsHeaders(request, env));
+  return new Response(null, { status: 204, headers });
+}
+
+async function handleRequest(request, env) {
+
+    const url = new URL(request.url);
+    const { pathname } = url;
+    const method = request.method.toUpperCase();
+
+    const verifyMatch = pathname.match(/^\/api\/verify\/([^/]+)$/);
+    if (method === 'GET' && verifyMatch) {
+      const wechatId = decodeURIComponent(verifyMatch[1]);
+      await execRun(env, "UPDATE stats SET value = value + 1 WHERE key = 'account_queries'");
+      const account = await queryFirst(env, 'SELECT wechat_id, verified_status, verification_method, verification_time, reverified_at, manual_status, manual_reason, manual_admin, manual_time FROM accounts WHERE wechat_id = ?', [wechatId]);
+      const blacklistRecord = await getActiveBlacklistRecord(env, wechatId);
+      const blacklist = buildBlacklistPayload(blacklistRecord);
+
+      if (blacklist) {
+        return jsonResponse({
+          success: false,
+          message: 'Account is in blacklist.',
+          blacklisted: true,
+          blacklist,
+        });
+      }
+
+      if (account) {
+        if(account['verification_method'] != "Manual") {
+          delete account['manual_status'];
+          delete account['manual_reason'];
+          delete account['manual_admin'];
+          delete account['manual_time'];
+        }
+        const info = await queryAll(
+          env,
+          'SELECT * FROM account_info WHERE wechat_id = ? AND visibility = ? ORDER BY created_at DESC',
+          [wechatId, 'public']
+        );
+        return jsonResponse({ success: true, account, info });
+      }
+
+      return jsonResponse({ success: false, message: 'Account not found or not verified.' });
+    }
+
+    if (method === 'POST' && pathname === '/api/adfs/create-code') {
+      const authHeader = request.headers.get('authorization') || '';
+      const jwtValid = await verifyAdfsCreateCodeJwt(env, authHeader);
+      if (!jwtValid) {
+        return jsonResponse({ success: false, message: 'Request must be made from ADFS.' }, 401);
+      }
+      const body = await parseJson(request);
+      const student_id = body.student_id != null ? String(body.student_id).trim() : '';
+      const student_name = body.student_name != null ? String(body.student_name).trim() : null;
+      const email = body.email != null ? String(body.email).trim() : null;
+
+      if (!student_id) {
+        return jsonResponse({ success: false, message: 'student_id is required.' }, 400);
+      }
+
+      let hashStudentId, hashStudentName, hashEmail;
+      try {
+        hashStudentId = await hashSensitive(env, 'student_id', student_id);
+        hashStudentName = await hashSensitive(env, 'student_name', student_name || '');
+        hashEmail = await hashSensitive(env, 'email', email ? normalizeEmail(email) : '');
+      } catch (err) {
+        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      }
+
+      const code = generateAdfsCode();
+      const codeHash = await sha256Hex(code);
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      await execRun(
+        env,
+        `
+          INSERT INTO adfs_verification_codes (code_hash, student_id, student_name, email, expires_at, created_at)
+          VALUES (?, ?, ?, ?, ?, datetime('now'))
+        `,
+        [codeHash, hashStudentId, hashStudentName, hashEmail, expiresAt]
+      );
+
+      return jsonResponse({ success: true, code });
+    }
+
+    if (method === 'POST' && pathname === '/api/verify/adfs') {
+      const body = await parseJson(request);
+      const { wechat_id, code } = body;
+
+      if (!wechat_id) {
+        return jsonResponse({ success: false, message: 'wechat_id is required.' }, 400);
+      }
+
+      const blacklistResponse = await ensureNotBlacklisted(env, wechat_id);
+      if (blacklistResponse) {
+        return blacklistResponse;
+      }
+
+      let finalStudentId, finalStudentName, finalEmail;
+
+      if (code) {
+        const codeHash = await sha256Hex(String(code));
+        const row = await queryFirst(
+          env,
+          `SELECT student_id, student_name, email, expires_at FROM adfs_verification_codes WHERE code_hash = ?`,
+          [codeHash]
+        );
+        if (!row) {
+          return jsonResponse({ success: false, message: 'ADFS Verfication Failed, please try again or contact support.' }, 400);
+        }
+        if (new Date(row.expires_at) < new Date()) {
+          await execRun(env, 'DELETE FROM adfs_verification_codes WHERE code_hash = ?', [codeHash]);
+          return jsonResponse({ success: false, message: 'ADFS Verification has expired, please try again or contact support.' }, 400);
+        }
+        finalStudentId = row.student_id;
+        finalStudentName = row.student_name || null;
+        finalEmail = row.email || null;
+        await execRun(env, 'DELETE FROM adfs_verification_codes WHERE code_hash = ?', [codeHash]);
+      } else {
+        return jsonResponse({ success: false, message: 'code is required.' }, 400);
+      }
+
+      const existingAccount = await queryFirst(
+        env,
+        'SELECT verified_status, verification_method FROM accounts WHERE wechat_id = ?',
+        [wechat_id]
+      );
+      if (existingAccount && Number(existingAccount.verified_status) === 1) {
+        const method = String(existingAccount.verification_method || '');
+        if (method === 'Manual' || method === 'Batch') {
+          return jsonResponse({ success: false, message: 'Account is already verified. Reverification is not available for this account.' }, 400);
+        }
+        if (method === 'ADFS') {
+          await execRun(env, "UPDATE accounts SET reverified_at = datetime('now') WHERE wechat_id = ?", [wechat_id]);
+          const { token, expiresAt } = await createRenameToken(env, wechat_id);
+          const reverifiedAt = new Date().toISOString();
+          await execRun(
+            env,
+            `
+              INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [wechat_id, 'emerald', 'refresh', 'Account reverified', `Account reverified at ${reverifiedAt}.`, 'SYSTEM', 'private']
+          );
+          return jsonResponse({
+            success: true,
+            message: 'Account reverified successfully.',
+            reverified: true,
+            rename_token: token,
+            rename_token_expires_at: expiresAt,
+          });
+        }
+        return jsonResponse({ success: false, message: 'Account is already verified.' }, 400);
+      }
+
+      const existingByStudentId = finalStudentId
+        ? await queryFirst(env, 'SELECT wechat_id FROM accounts WHERE wechat_id != ? AND student_id = ? LIMIT 1', [wechat_id, finalStudentId])
+        : null;
+      if (existingByStudentId) {
+        return jsonResponse({ success: false, message: 'This student ID is already linked to another account.' }, 400);
+      }
+      const existingByStudentName = finalStudentName
+        ? await queryFirst(env, 'SELECT wechat_id FROM accounts WHERE wechat_id != ? AND student_name = ? LIMIT 1', [wechat_id, finalStudentName])
+        : null;
+      if (existingByStudentName) {
+        return jsonResponse({ success: false, message: 'This name is already linked to another account.' }, 400);
+      }
+      const existingByEmail = finalEmail
+        ? await queryFirst(env, 'SELECT wechat_id FROM accounts WHERE wechat_id != ? AND email = ? LIMIT 1', [wechat_id, finalEmail])
+        : null;
+      if (existingByEmail) {
+        return jsonResponse({ success: false, message: 'This email is already linked to another account.' }, 400);
+      }
+
+      await execRun(
+        env,
+        `
+          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, student_id, student_name, email)
+          VALUES (?, 1, 'ADFS', datetime('now'), ?, ?, ?)
+          ON CONFLICT(wechat_id) DO UPDATE SET
+            verified_status = 1,
+            verification_method = 'ADFS',
+            verification_time = datetime('now'),
+            student_id = excluded.student_id,
+            student_name = excluded.student_name,
+            email = excluded.email
+        `,
+        [wechat_id, finalStudentId, finalStudentName, finalEmail]
+      );
+
+      return jsonResponse({ success: true, message: 'Verified successfully via ADFS.' });
+    }
+
+    if (method === 'POST' && pathname === '/api/verify/email') {
+      const body = await parseJson(request);
+      const { wechat_id, email, code } = body;
+      const normalizedEmail = normalizeEmail(email);
+      const allowedEmailDomain = String(env.ALLOWED_EMAIL_DOMAIN || '').trim().toLowerCase();
+
+      if (!wechat_id || !normalizedEmail) {
+        return jsonResponse({ success: false, message: 'wechat_id and email are required.' }, 400);
+      }
+
+      const blacklistResponse = await ensureNotBlacklisted(env, wechat_id);
+      if (blacklistResponse) {
+        return blacklistResponse;
+      }
+
+      if (allowedEmailDomain) {
+        const incomingDomain = getEmailDomain(normalizedEmail);
+        if (incomingDomain !== allowedEmailDomain) {
+          return jsonResponse(
+            {
+              success: false,
+              message: `Email must use the allowed domain: ${allowedEmailDomain}`,
+            },
+            400
+          );
+        }
+      }
+
+      if (!code) {
+        if (await checkVerified(env, wechat_id)) {
+          return jsonResponse({ success: false, message: 'Account is already verified.' }, 400);
+        }
+        let emailHash;
+        try {
+          emailHash = await hashSensitive(env, 'email', normalizedEmail);
+        } catch {
+          return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+        }
+        const emailUsedByOtherWechat = await queryFirst(
+          env,
+          `
+            SELECT wechat_id
+            FROM accounts
+            WHERE email = ?
+              AND verification_method = 'Email'
+              AND wechat_id <> ?
+            LIMIT 1
+          `,
+          [emailHash, wechat_id]
+        );
+
+        if (emailUsedByOtherWechat) {
+          return jsonResponse(
+            {
+              success: false,
+              message: 'This email has already been used to verify another WeChat ID.',
+            },
+            409
+          );
+        }
+
+        const recentSend = await queryFirst(
+          env,
+          `
+            SELECT wechat_id, email
+            FROM email_verification_codes
+            WHERE (
+              email = ?
+              OR wechat_id = ?
+            )
+              AND datetime(expires_at, '-10 minutes') > datetime('now', '-1 minute')
+            LIMIT 1
+          `,
+          [normalizedEmail, wechat_id]
+        );
+
+        if (recentSend) {
+          return jsonResponse(
+            {
+              success: false,
+              message: 'Please wait at least 1 minute before requesting another verification email.',
+            },
+            429
+          );
+        }
+
+        const quota = await consumeGlobalEmailSendQuota(env);
+        if (!quota.allowed) {
+          return jsonResponse(
+            {
+              success: false,
+              message: `Email send rate limit reached. Max ${quota.limit} verification emails per minute globally.`,
+            },
+            429
+          );
+        }
+
+        const newCode = generateVerificationCode();
+        const codeHash = await sha256Hex(newCode);
+
+        await execRun(
+          env,
+          `
+            INSERT INTO email_verification_codes (wechat_id, email, code_hash, expires_at, attempts, updated_at)
+            VALUES (?, ?, ?, datetime('now', '+10 minutes'), 0, datetime('now'))
+            ON CONFLICT(wechat_id, email) DO UPDATE SET
+              code_hash = excluded.code_hash,
+              expires_at = datetime('now', '+10 minutes'),
+              attempts = 0,
+              updated_at = datetime('now')
+          `,
+          [wechat_id, normalizedEmail, codeHash]
+        );
+
+        try {
+          await sendVerificationEmailWithSes(env, normalizedEmail, newCode);
+        } catch (error) {
+          return jsonResponse(
+            {
+              success: false,
+              message: 'Failed to send verification email.',
+              error: String(error?.message || error),
+            },
+            500
+          );
+        }
+
+        return jsonResponse({
+          success: true,
+          message: 'Verification code sent to email.',
+        });
+      }
+
+      const verification = await queryFirst(
+        env,
+        `
+          SELECT code_hash, expires_at, attempts
+          FROM email_verification_codes
+          WHERE wechat_id = ? AND email = ?
+        `,
+        [wechat_id, normalizedEmail]
+      );
+
+      if (!verification) {
+        return jsonResponse({ success: false, message: 'No verification code found. Please request a new code.' }, 400);
+      }
+
+      if (Number(verification.attempts || 0) >= 5) {
+        return jsonResponse({ success: false, message: 'Too many failed attempts. Please request a new code.' }, 429);
+      }
+
+      const expiryMs = Date.parse(String(verification.expires_at));
+      if (!Number.isNaN(expiryMs) && Date.now() > expiryMs) {
+        return jsonResponse({ success: false, message: 'Verification code expired. Please request a new code.' }, 400);
+      }
+
+      const incomingCodeHash = await sha256Hex(String(code));
+      if (incomingCodeHash !== verification.code_hash) {
+        await execRun(
+          env,
+          `
+            UPDATE email_verification_codes
+            SET attempts = COALESCE(attempts, 0) + 1, updated_at = datetime('now')
+            WHERE wechat_id = ? AND email = ?
+          `,
+          [wechat_id, normalizedEmail]
+        );
+        return jsonResponse({ success: false, message: 'Invalid verification code.' }, 400);
+      }
+
+      const existingAccountEmail = await queryFirst(
+        env,
+        'SELECT verified_status, verification_method FROM accounts WHERE wechat_id = ?',
+        [wechat_id]
+      );
+      if (existingAccountEmail && Number(existingAccountEmail.verified_status) === 1) {
+        const method = String(existingAccountEmail.verification_method || '');
+        if (method === 'Manual' || method === 'Batch') {
+          return jsonResponse({ success: false, message: 'Account is already verified. Reverification is not available for this account.' }, 400);
+        }
+        if (method === 'Email') {
+          await execRun(env, "UPDATE accounts SET reverified_at = datetime('now') WHERE wechat_id = ?", [wechat_id]);
+          const { token, expiresAt } = await createRenameToken(env, wechat_id);
+          const reverifiedAt = new Date().toISOString();
+          await execRun(
+            env,
+            `
+              INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [wechat_id, 'emerald', 'refresh', 'Account reverified', `Account reverified at ${reverifiedAt}.`, 'SYSTEM', 'private']
+          );
+          await execRun(env, 'DELETE FROM email_verification_codes WHERE wechat_id = ? AND email = ?', [wechat_id, normalizedEmail]);
+          return jsonResponse({
+            success: true,
+            message: 'Account reverified successfully.',
+            reverified: true,
+            rename_token: token,
+            rename_token_expires_at: expiresAt,
+          });
+        }
+        return jsonResponse({ success: false, message: 'Account is already verified.' }, 400);
+      }
+
+      let emailHashForStorage;
+      try {
+        emailHashForStorage = await hashSensitive(env, 'email', normalizedEmail);
+      } catch {
+        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      }
+      await execRun(
+        env,
+        `
+          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, email)
+          VALUES (?, 1, 'Email', datetime('now'), ?)
+          ON CONFLICT(wechat_id) DO UPDATE SET
+            verified_status = 1,
+            verification_method = 'Email',
+            verification_time = datetime('now'),
+            email = excluded.email
+        `,
+        [wechat_id, emailHashForStorage]
+      );
+
+      await execRun(
+        env,
+        'DELETE FROM email_verification_codes WHERE wechat_id = ? AND email = ?',
+        [wechat_id, normalizedEmail]
+      );
+
+      return jsonResponse({ success: true, message: 'Verified successfully via Email.' });
+    }
+
+    if (method === 'POST' && pathname === '/api/verify/discord/callback') {
+      const body = await parseJson(request);
+      const { code } = body;
+
+      if (!code) {
+        return jsonResponse({ success: false, message: 'code is required.' }, 400);
+      }
+
+      let discordIdentity;
+      try {
+        const accessToken = await exchangeDiscordOauthCode(env, code);
+        discordIdentity = await fetchDiscordIdentity(accessToken);
+      } catch (error) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'Failed to validate Discord OAuth code.',
+            error: String(error?.message || error),
+          },
+          400
+        );
+      }
+
+      const discordId = String(discordIdentity?.id || '').trim();
+      const discordName = String(
+        discordIdentity?.global_name || discordIdentity?.username || discordIdentity?.id || ''
+      ).trim();
+      const userAvatar = String(discordIdentity?.avatar || '').trim();
+
+      if (!discordId) {
+        return jsonResponse({ success: false, message: 'Discord identity not found.' }, 400);
+      }
+
+      let cachedVerification;
+      try {
+        cachedVerification = await getCachedDiscordVerification(env, discordId);
+      } catch {
+        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      }
+      if (cachedVerification) {
+        return jsonResponse({
+          success: true,
+          discord_id: discordId,
+          discord_name: discordName,
+          avatar: userAvatar,
+          cached: true,
+        });
+      }
+
+      const requiredRoleId = String(env.DISCORD_REQUIRED_ROLE_ID || '').trim();
+      if (!requiredRoleId) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'Server configuration missing DISCORD_REQUIRED_ROLE_ID.',
+          },
+          500
+        );
+      }
+
+      let guildMember;
+      try {
+        guildMember = await fetchDiscordGuildMember(env, discordId);
+      } catch (error) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'Discord user is not present in the required server.',
+            error: String(error?.message || error),
+          },
+          403
+        );
+      }
+
+      const roles = Array.isArray(guildMember?.roles) ? guildMember.roles : [];
+      if (!roles.includes(requiredRoleId)) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'Discord user does not hold the required role.',
+          },
+          403
+        );
+      }
+
+      try {
+        await cacheDiscordVerification(env, discordId, discordName);
+      } catch {
+        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      }
+
+      return jsonResponse({
+        success: true,
+        discord_id: discordId,
+        discord_name: discordName,
+        avatar: userAvatar,
+        cached: false,
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/verify/discord/connect') {
+      const body = await parseJson(request);
+      const { wechat_id, discord_id } = body;
+
+      if (!wechat_id || !discord_id) {
+        return jsonResponse({ success: false, message: 'wechat_id and discord_id are required.' }, 400);
+      }
+
+      const blacklistResponse = await ensureNotBlacklisted(env, wechat_id);
+      if (blacklistResponse) {
+        return blacklistResponse;
+      }
+
+      let verifiedDiscord;
+      try {
+        verifiedDiscord = await getCachedDiscordVerification(env, String(discord_id));
+      } catch {
+        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      }
+      if (!verifiedDiscord) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'discord_id is not verified. Complete Discord verification first.',
+          },
+          400
+        );
+      }
+
+      const connectedElsewhere = await queryFirst(
+        env,
+        `
+          SELECT wechat_id
+          FROM accounts
+          WHERE discord_id = ? AND wechat_id <> ? AND verified_status = 1
+          LIMIT 1
+        `,
+        [verifiedDiscord.discord_id, wechat_id]
+      );
+
+      if (connectedElsewhere) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'This Discord account is already connected to another WeChat ID.',
+          },
+          409
+        );
+      }
+
+      const existingAccountDiscord = await queryFirst(
+        env,
+        'SELECT verified_status, verification_method FROM accounts WHERE wechat_id = ?',
+        [wechat_id]
+      );
+
+      if (existingAccountDiscord && Number(existingAccountDiscord.verified_status) === 1) {
+        const method = String(existingAccountDiscord.verification_method || '');
+        if (method === 'Manual' || method === 'Batch') {
+          return jsonResponse({ success: false, message: 'Account is already verified. Reverification is not available for this account.' }, 400);
+        }
+        if (method === 'Discord') {
+          await execRun(env, "UPDATE accounts SET reverified_at = datetime('now') WHERE wechat_id = ?", [wechat_id]);
+          const { token, expiresAt } = await createRenameToken(env, wechat_id);
+          const reverifiedAt = new Date().toISOString();
+          await execRun(
+            env,
+            `
+              INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [wechat_id, 'blue', 'refresh', 'Account reverified', `Account reverified at ${reverifiedAt}.`, 'SYSTEM', 'private']
+          );
+          return jsonResponse({
+            success: true,
+            message: 'Account reverified successfully.',
+            reverified: true,
+            rename_token: token,
+            rename_token_expires_at: expiresAt,
+          });
+        }
+        return jsonResponse({ success: false, message: 'Account is already verified.' }, 400);
+      }
+
+      await execRun(
+        env,
+        `
+          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, discord_id)
+          VALUES (?, 1, 'Discord', datetime('now'), ?)
+          ON CONFLICT(wechat_id) DO UPDATE SET
+            verified_status = 1,
+            verification_method = 'Discord',
+            verification_time = datetime('now'),
+            discord_id = excluded.discord_id
+        `,
+        [wechat_id, verifiedDiscord.discord_id]
+      );
+
+      return jsonResponse({
+        success: true,
+        message: 'Discord account connected and WeChat ID verified.',
+        discord_id: body.discord_id,
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/verify/manual') {
+      const body = await parseJson(request);
+      const { wechat_id, reason } = body;
+      const reasonText = reason != null ? String(reason).trim() : '';
+
+      if (!reasonText) {
+        return jsonResponse({ success: false, message: 'reason is required for manual verification.' }, 400);
+      }
+
+      const blacklistResponse = await ensureNotBlacklisted(env, wechat_id);
+      if (blacklistResponse) {
+        return blacklistResponse;
+      }
+
+      if (await checkVerified(env, wechat_id)) {
+        return jsonResponse({ success: false, message: 'Account is already verified.' }, 400);
+      }
+
+      await execRun(
+        env,
+        `
+          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, manual_status)
+          VALUES (?, 0, 'Manual', datetime('now'), 'pending')
+          ON CONFLICT(wechat_id) DO UPDATE SET
+            verified_status = 0,
+            verification_method = 'Manual',
+            verification_time = datetime('now'),
+            manual_status = 'pending'
+        `,
+        [wechat_id]
+      );
+
+      await execRun(
+        env,
+        `
+          INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [wechat_id, 'blue', 'document', 'Manual verification reason', reasonText, wechat_id, 'private']
+      );
+
+      return jsonResponse({
+        success: true,
+        message: 'Manual Verification application submitted and is pending approval.',
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/account/rename') {
+      const body = await parseJson(request);
+      const { rename_token, new_wechat_id } = body;
+      const newId = new_wechat_id != null ? String(new_wechat_id).trim() : '';
+      if (!rename_token || !newId) {
+        return jsonResponse({ success: false, message: 'rename_token and new_wechat_id are required.' }, 400);
+      }
+      const oldWechatId = await consumeRenameToken(env, rename_token);
+      if (!oldWechatId) {
+        return jsonResponse({ success: false, message: 'Invalid or expired rename token.' }, 400);
+      }
+      if (oldWechatId === newId) {
+        return jsonResponse({ success: false, message: 'new_wechat_id must be different from current WeChat ID.' }, 400);
+      }
+      const existingNew = await queryFirst(env, 'SELECT wechat_id FROM accounts WHERE wechat_id = ?', [newId]);
+      if (existingNew) {
+        return jsonResponse({ success: false, message: 'The new WeChat ID is already in use.' }, 409);
+      }
+      const row = await queryFirst(env, 'SELECT * FROM accounts WHERE wechat_id = ?', [oldWechatId]);
+      if (!row) {
+        return jsonResponse({ success: false, message: 'Account not found.' }, 404);
+      }
+      const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+      const lastRenameAt = row.last_rename_at ? Date.parse(String(row.last_rename_at)) : 0;
+      if (Number.isFinite(lastRenameAt) && Date.now() - lastRenameAt < oneYearMs) {
+        const nextEligibleAt = new Date(lastRenameAt + oneYearMs).toISOString();
+        return jsonResponse(
+          {
+            success: false,
+            message: 'You can only change your WeChat ID once per year, you will be able to change it again on ' + nextEligibleAt + ' (UTC).'
+          },
+          429
+        );
+      }
+      await execRun(
+        env,
+        `
+          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, student_id, student_name, email, discord_id, manual_status, manual_reason, manual_admin, manual_time, reverified_at, last_rename_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `,
+        [
+          newId,
+          row.verified_status,
+          row.verification_method,
+          row.verification_time,
+          row.student_id ?? null,
+          row.student_name ?? null,
+          row.email ?? null,
+          row.discord_id ?? null,
+          row.manual_status ?? null,
+          row.manual_reason ?? null,
+          row.manual_admin ?? null,
+          row.manual_time ?? null,
+          row.reverified_at ?? null
+        ]
+      );
+      await execRun(env, 'UPDATE account_info SET wechat_id = ? WHERE wechat_id = ?', [newId, oldWechatId]);
+      await execRun(env, 'UPDATE account_blacklist SET wechat_id = ? WHERE wechat_id = ?', [newId, oldWechatId]);
+      await execRun(env, 'DELETE FROMemail_verification_codes WHERE wechat_id = ?', [oldWechatId]);
+      await execRun(env, 'DELETE FROM accounts WHERE wechat_id = ?', [oldWechatId]);
+      const changeBody = `WeChat ID was changed from **${oldWechatId}** to **${newId}**.`;
+      await execRun(
+        env,
+        `
+          INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [newId, 'emerald', 'pencil', 'WeChat ID changed', changeBody, 'SYSTEM', 'public']
+      );
+      return jsonResponse({
+        success: true,
+        message: 'WeChat ID changed successfully.',
+        wechat_id: newId,
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/account/rename/invalidate') {
+      const body = await parseJson(request);
+      const { rename_token } = body;
+      if (!rename_token) {
+        return jsonResponse({ success: false, message: 'rename_token is required.' }, 400);
+      }
+      await invalidateRenameToken(env, rename_token);
+      return jsonResponse({ success: true, message: 'Rename token invalidated.' });
+    }
+
+    if (method === 'GET' && pathname === '/api/admin/stats') {
+      const auth = await requireAuth(request, env);
+      if (auth.response) return auth.response;
+
+      const verifiedRow = await queryFirst(env, 'SELECT COUNT(*) as count FROM accounts WHERE verified_status = 1');
+      const verified_count = Number(verifiedRow?.count ?? 0);
+      
+      const statsRow = await queryFirst(env, "SELECT value FROM stats WHERE key = 'account_queries' LIMIT 1");
+      const account_queries = Number(statsRow?.value ?? 0);
+      
+      return jsonResponse({ success: true, verified_count, account_queries });
+    }
+
+    if (method === 'GET' && pathname === '/api/admin/accounts') {
+      const auth = await requireAuth(request, env);
+      if (auth.response) return auth.response;
+
+      let accounts;
+      if (auth.admin.role === 'moderator') {
+        accounts = await queryAll(
+          env,
+          `
+            SELECT * FROM accounts
+            WHERE manual_status = 'pending'
+            ORDER BY verification_time DESC
+          `
+        );
+      } else {
+        accounts = await queryAll(
+          env,
+          `
+            SELECT * FROM accounts
+            ORDER BY
+              CASE WHEN manual_status = 'pending' THEN 0 ELSE 1 END,
+              verification_time DESC
+          `
+        );
+      }
+
+      return jsonResponse({
+        success: true,
+        accounts,
+        admin: { username: auth.admin.username, role: auth.admin.role },
+      });
+    }
+
+    const adminInfoMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/info$/);
+    if (method === 'GET' && adminInfoMatch) {
+      const auth = await requireAuth(request, env);
+      if (auth.response) return auth.response;
+
+      const wechatId = decodeURIComponent(adminInfoMatch[1]);
+      const info = await queryAll(
+        env,
+        'SELECT * FROM account_info WHERE wechat_id = ? ORDER BY created_at DESC',
+        [wechatId]
+      );
+      return jsonResponse({ success: true, info });
+    }
+
+    if (method === 'POST' && adminInfoMatch) {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const wechatId = decodeURIComponent(adminInfoMatch[1]);
+      const body = await parseJson(request);
+      const { color, icon, title, body: infoBody, visibility } = body;
+
+      const result = await execRun(
+        env,
+        `
+          INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [wechatId, color, icon, title, infoBody, auth.admin.username, visibility]
+      );
+
+      return jsonResponse({ success: true, id: result.meta?.last_row_id ?? null });
+    }
+
+    const adminEditInfoMatch = pathname.match(/^\/api\/admin\/info\/([^/]+)$/);
+    if (method === 'PUT' && adminEditInfoMatch) {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const id = decodeURIComponent(adminEditInfoMatch[1]);
+      const body = await parseJson(request);
+      const { color, icon, title, body: infoBody, visibility } = body;
+
+      await execRun(
+        env,
+        `
+          UPDATE account_info
+          SET color = ?, icon = ?, title = ?, body = ?, visibility = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        [color, icon, title, infoBody, visibility, id]
+      );
+
+      return jsonResponse({ success: true });
+    }
+
+    if (method === 'DELETE' && adminEditInfoMatch) {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const id = decodeURIComponent(adminEditInfoMatch[1]);
+      await execRun(env, 'DELETE FROM account_info WHERE id = ?', [id]);
+      return jsonResponse({ success: true });
+    }
+
+    const revokeMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/(revoke|unrevoke)$/);
+    if (method === 'POST' && revokeMatch) {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const wechatId = decodeURIComponent(revokeMatch[1]);
+      const action = revokeMatch[2];
+
+      if (action === 'revoke') {
+        await execRun(env, 'UPDATE accounts SET verified_status = 2 WHERE wechat_id = ?', [wechatId]);
+        return jsonResponse({ success: true, message: 'Verification revoked.' });
+      }
+
+      await execRun(env, 'UPDATE accounts SET verified_status = 1 WHERE wechat_id = ?', [wechatId]);
+      return jsonResponse({ success: true, message: 'Verification restored.' });
+    }
+
+    const manualMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/manual$/);
+    if (method === 'POST' && manualMatch) {
+      const auth = await requireAuth(request, env);
+      if (auth.response) return auth.response;
+
+      const wechatId = decodeURIComponent(manualMatch[1]);
+      const body = await parseJson(request);
+      const { action, reason } = body;
+
+      if (action === 'approve') {
+        await execRun(
+          env,
+          `
+            UPDATE accounts
+            SET verified_status = 1, manual_status = 'approved', manual_admin = ?, manual_time = datetime('now')
+            WHERE wechat_id = ?
+          `,
+          [auth.admin.username, wechatId]
+        );
+      } else if (action === 'reject') {
+        await execRun(
+          env,
+          `
+            UPDATE accounts
+            SET verified_status = 0, manual_status = 'rejected', manual_reason = ?, manual_admin = ?, manual_time = datetime('now')
+            WHERE wechat_id = ?
+          `,
+          [reason || '', auth.admin.username, wechatId]
+        );
+
+        const warningInfo = `This account has been **REJECTED** previously by **${auth.admin.username}** with reason: **${reason}**.`;
+        await execRun(
+          env,
+          `
+            INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [wechatId, 'orange', 'warning', 'Previously Rejected Application', warningInfo, 'SYSTEM', 'private']
+        );
+      }
+
+      return jsonResponse({ success: true, message: `Application ${action}d.` });
+    }
+
+    const blacklistMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/blacklist$/);
+    if (method === 'POST' && blacklistMatch) {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const wechatId = decodeURIComponent(blacklistMatch[1]);
+      const body = await parseJson(request);
+      const reason = String(body?.reason || '').trim();
+
+      if (!reason) {
+        return jsonResponse({ success: false, message: 'reason is required to blacklist an account.' }, 400);
+      }
+
+      await execRun(
+        env,
+        `
+          INSERT INTO account_blacklist (wechat_id, reason, added_by, added_at, is_active, updated_at)
+          VALUES (?, ?, ?, datetime('now'), 1, datetime('now'))
+          ON CONFLICT(wechat_id) DO UPDATE SET
+            reason = excluded.reason,
+            added_by = excluded.added_by,
+            added_at = datetime('now'),
+            is_active = 1,
+            updated_at = datetime('now')
+        `,
+        [wechatId, reason, auth.admin.username]
+      );
+
+      const accountExists = await queryFirst(env, 'SELECT wechat_id FROM accounts WHERE wechat_id = ? LIMIT 1', [wechatId]);
+      if (accountExists) {
+        const blacklistInfo = `This account has been **BLACKLISTED** by **${auth.admin.username}** at **${new Date().toISOString()}** with reason: **${reason}**.`;
+        await execRun(
+          env,
+          `
+            INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [wechatId, 'red', 'warning', 'Blacklisted Account', blacklistInfo, 'SYSTEM', 'private']
+        );
+      }
+
+      return jsonResponse({
+        success: true,
+        message: 'Account added to blacklist successfully.',
+        blacklist: {
+          wechat_id: wechatId,
+          reason,
+          added_by: auth.admin.username,
+        },
+      });
+    }
+
+    const unblacklistMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/unblacklist$/);
+    if (method === 'POST' && unblacklistMatch) {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const wechatId = decodeURIComponent(unblacklistMatch[1]);
+
+      const existingRecord = await queryFirst(
+        env,
+        `
+          SELECT wechat_id, is_active
+          FROM account_blacklist
+          WHERE wechat_id = ?
+          LIMIT 1
+        `,
+        [wechatId]
+      );
+
+      if (!existingRecord || Number(existingRecord.is_active) !== 1) {
+        return jsonResponse({ success: false, message: 'Account is not currently blacklisted.' }, 400);
+      }
+
+      await execRun(
+        env,
+        `
+          UPDATE account_blacklist
+          SET is_active = 0, updated_at = datetime('now')
+          WHERE wechat_id = ?
+        `,
+        [wechatId]
+      );
+
+      const accountExists = await queryFirst(env, 'SELECT wechat_id FROM accounts WHERE wechat_id = ? LIMIT 1', [wechatId]);
+      if (accountExists) {
+        const unblacklistInfo = `This account has been **REMOVED FROM BLACKLIST** by **${auth.admin.username}** at **${new Date().toISOString()}**.`;
+        await execRun(
+          env,
+          `
+            INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [wechatId, 'green', 'check', 'Blacklist Removed', unblacklistInfo, 'SYSTEM', 'private']
+        );
+      }
+
+      return jsonResponse({
+        success: true,
+        message: 'Account removed from blacklist successfully.',
+        blacklist: {
+          wechat_id: wechatId,
+          is_active: 0,
+          removed_by: auth.admin.username,
+        },
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/batch/verify') {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const body = await parseJson(request);
+      const wechatIds = Array.isArray(body?.wechat_ids) ? body.wechat_ids : [];
+      const reason = String(body?.reason ?? '').trim();
+
+      if (!reason) {
+        return jsonResponse({ success: false, message: 'reason is required for batch verify.' }, 400);
+      }
+
+      const normalizedIds = wechatIds.filter((id) => typeof id === 'string' && id.trim() !== '').map((id) => id.trim());
+      if (normalizedIds.length === 0) {
+        return jsonResponse({ success: false, message: 'wechat_ids must be a non-empty array of strings.' }, 400);
+      }
+
+      const batchInfoBody = `This account was **batch verified** by **${auth.admin.username}** at **${new Date().toISOString()}**. Reason: **${reason}**.`;
+
+      const verified = [];
+      const skipped = [];
+
+      for (const wechatId of normalizedIds) {
+        const blacklistRecord = await getActiveBlacklistRecord(env, wechatId);
+        if (blacklistRecord) {
+          skipped.push({ wechat_id: wechatId, reason: 'Account is blacklisted.' });
+          continue;
+        }
+
+        if (await checkVerified(env, wechatId)) {
+          skipped.push({ wechat_id: wechatId, reason: 'Already verified.' });
+          continue;
+        }
+
+        await execRun(
+          env,
+          `
+            INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, manual_status, manual_admin, manual_time)
+            VALUES (?, 1, 'Batch', datetime('now'), 'approved', ?, datetime('now'))
+            ON CONFLICT(wechat_id) DO UPDATE SET
+              verified_status = 1,
+              verification_method = 'Batch',
+              verification_time = datetime('now'),
+              manual_status = 'approved',
+              manual_admin = excluded.manual_admin,
+              manual_time = datetime('now')
+          `,
+          [wechatId, auth.admin.username]
+        );
+
+        await execRun(
+          env,
+          `
+            INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [wechatId, 'emerald', 'checkmark', 'Batch Verified (details)', batchInfoBody, auth.admin.username, 'private']
+        );
+        await execRun(
+          env,
+          `
+            INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [wechatId, 'emerald', 'checkmark', 'Batch Verified', `This account was **VERIFIED** as a part of a batch operation: **${reason}**. Contact support if you believe this is an error.`, auth.admin.username, 'public']
+        );
+
+        verified.push(wechatId);
+      }
+
+      return jsonResponse({
+        success: true,
+        message: `Batch verify completed. Verified: ${verified.length}, skipped: ${skipped.length}.`,
+        verified,
+        skipped,
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/batch/blacklist') {
+      const auth = await requireAdmin(request, env);
+      if (auth.response) return auth.response;
+
+      const body = await parseJson(request);
+      const wechatIds = Array.isArray(body?.wechat_ids) ? body.wechat_ids : [];
+      const reason = String(body?.reason ?? '').trim();
+
+      if (!reason) {
+        return jsonResponse({ success: false, message: 'reason is required for batch blacklist.' }, 400);
+      }
+
+      const normalizedIds = wechatIds.filter((id) => typeof id === 'string' && id.trim() !== '').map((id) => id.trim());
+      if (normalizedIds.length === 0) {
+        return jsonResponse({ success: false, message: 'wechat_ids must be a non-empty array of strings.' }, 400);
+      }
+
+      const blacklisted = [];
+
+      for (const wechatId of normalizedIds) {
+        await execRun(
+          env,
+          `
+            INSERT INTO account_blacklist (wechat_id, reason, added_by, added_at, is_active, updated_at)
+            VALUES (?, ?, ?, datetime('now'), 1, datetime('now'))
+            ON CONFLICT(wechat_id) DO UPDATE SET
+              reason = excluded.reason,
+              added_by = excluded.added_by,
+              added_at = datetime('now'),
+              is_active = 1,
+              updated_at = datetime('now')
+          `,
+          [wechatId, reason, auth.admin.username]
+        );
+
+        const accountExists = await queryFirst(env, 'SELECT wechat_id FROM accounts WHERE wechat_id = ? LIMIT 1', [wechatId]);
+        if (accountExists) {
+          const blacklistInfo = `This account has been **BLACKLISTED** by **${auth.admin.username}** at **${new Date().toISOString()}** with reason: **${reason}**.`;
+          await execRun(
+            env,
+            `
+              INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [wechatId, 'red', 'warning', 'Blacklisted Account (details)', blacklistInfo, 'SYSTEM', 'private']
+          );
+          await execRun(
+            env,
+            `
+              INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [wechatId, 'red', 'warning', 'Blacklisted', `This account is **BLACKLISTED** as a part of a batch operation: **${reason}**. Contact support if you believe this is an error.`, 'SYSTEM', 'public']
+          );
+        }
+
+        blacklisted.push(wechatId);
+      }
+
+      return jsonResponse({
+        success: true,
+        message: `Batch blacklist completed. ${blacklisted.length} account(s) added to blacklist.`,
+        blacklisted,
+      });
+    }
+
+    if (method === 'GET' && pathname === '/api/admin/blacklist') {
+      const auth = await requireAuth(request, env);
+      if (auth.response) return auth.response;
+
+      const blacklist = await queryAll(
+        env,
+        `
+          SELECT wechat_id, reason, added_by, added_at
+          FROM account_blacklist
+          WHERE is_active = 1
+          ORDER BY added_at DESC
+        `
+      );
+
+      return jsonResponse({ success: true, blacklist });
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/rotate-token') {
+      const auth = await requireAuth(request, env);
+      if (auth.response) return auth.response;
+
+      const newToken = `${crypto.randomUUID()}${Date.now().toString(36)}`;
+      await execRun(env, 'UPDATE admins SET access_token = ? WHERE id = ?', [newToken, auth.admin.id]);
+      return jsonResponse({ success: true, token: newToken });
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/login') {
+      const body = await parseJson(request);
+      const { token } = body;
+      const admin = await queryFirst(env, 'SELECT * FROM admins WHERE access_token = ?', [token]);
+
+      if (admin) {
+        return jsonResponse({ success: true, role: admin.role });
+      }
+
+      return jsonResponse({ success: false, message: 'Invalid access token' }, 401);
+    }
+
+  return jsonResponse({ success: false, message: 'Route not found.' }, 404);
+}
+
+export default {
+  async fetch(request, env) {
+    if (request.method.toUpperCase() === 'OPTIONS') {
+      return corsPreflightResponse(request, env);
+    }
+
+    const response = await handleRequest(request, env);
+    return withCors(response, request, env);
+  },
+};

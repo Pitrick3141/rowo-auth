@@ -49,8 +49,7 @@ export default function VerificationPage() {
           inviteCode: inviteCode
         };
       }
-    } catch (error) {
-      console.error('Failed to fetch server info', error);
+    } catch {
     }
     return null;
   };
@@ -350,7 +349,7 @@ export default function VerificationPage() {
                           value={verificationCode}
                           onChange={(e) => setVerificationCode(e.target.value)}
                           className="block w-full px-4 py-3 rounded-xl border border-slate-300 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
-                          placeholder="114514"
+                          placeholder="Enter verification code"
                         />
                       </div>
                     </motion.div>

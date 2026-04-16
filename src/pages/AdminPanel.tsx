@@ -74,8 +74,7 @@ export default function AdminPanel() {
       } else {
         setIsAuthenticated(false);
       }
-    } catch (error) {
-      console.error('Failed to fetch accounts', error);
+    } catch {
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
@@ -97,8 +96,7 @@ export default function AdminPanel() {
       if (data.success) {
         setBlacklist(data.blacklist);
       }
-    } catch (error) {
-      console.error('Failed to fetch blacklist', error);
+    } catch {
     } finally {
       setLoadingBlacklist(false);
     }
@@ -152,8 +150,7 @@ export default function AdminPanel() {
         setToken(data.token);
         localStorage.setItem('admin_token', data.token);
       }
-    } catch (error) {
-      console.error('Failed to rotate token', error);
+    } catch {
     }
   };
 
@@ -464,8 +461,7 @@ function AccountModal({
       if (data.success) {
         setInfoItems(data.info);
       }
-    } catch (error) {
-      console.error('Failed to fetch info', error);
+    } catch {
     } finally {
       setLoadingInfo(false);
     }
@@ -501,8 +497,7 @@ function AccountModal({
       }
       setEditingInfo(null);
       fetchInfo();
-    } catch (error) {
-      console.error('Failed to save info', error);
+    } catch {
     } finally {
       setSaving(false);
     }
@@ -523,8 +518,7 @@ function AccountModal({
         headers: { 'Authorization': `Bearer ${token}` }
       });
       fetchInfo();
-    } catch (error) {
-      console.error('Failed to delete info', error);
+    } catch {
     } finally {
       setSaving(false);
     }
@@ -538,8 +532,7 @@ function AccountModal({
         headers: { 'Authorization': `Bearer ${token}` }
       });
       onUpdate();
-    } catch (error) {
-      console.error('Failed to revoke account', error);
+    } catch {
       setSaving(false);
     }
   };
@@ -552,8 +545,7 @@ function AccountModal({
         headers: { 'Authorization': `Bearer ${token}` }
       });
       onUpdate();
-    } catch (error) {
-      console.error('Failed to un-revoke account', error);
+    } catch {
       setSaving(false);
     }
   };
@@ -574,8 +566,7 @@ function AccountModal({
         body: JSON.stringify({ action, reason: rejectReason }),
       });
       onUpdate();
-    } catch (error) {
-      console.error(`Failed to ${action} application`, error);
+    } catch {
       setSaving(false);
     }
   };
@@ -985,9 +976,8 @@ function BlacklistTab({ token, blacklist, loading, onUpdate }: { token: string; 
       } else {
         setAlertMessage(data.message);
       }
-    } catch (error) {
-      console.error('Failed to unblacklist', error);
-      setAlertMessage(`Failed to unblacklist account: ${error}`);
+    } catch {
+      setAlertMessage('Failed to unblacklist account.');
     } finally {
       setSaving(false);
     }
