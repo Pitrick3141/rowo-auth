@@ -3,6 +3,9 @@ import { motion } from 'motion/react';
 import { ShieldCheck, Lock, Users, Server, Github, ExternalLink, Shield, Mail } from 'lucide-react';
 
 export default function AboutPage() {
+  const commitHash = (__GIT_COMMIT_HASH__ || 'unknown').trim();
+  const commitUrl = commitHash !== 'unknown' ? `https://github.com/Pitrick3141/rowo-auth/commit/${commitHash}` : '';
+
   return (
     <div className="max-w-3xl mx-auto py-8">
       <motion.div
@@ -177,6 +180,21 @@ export default function AboutPage() {
                 Contact Developer
               </a>
             </div>
+            <p className="mt-4 text-xs text-slate-400">
+              Current Build: {' '}
+              {commitUrl ? (
+                <a
+                  href={commitUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-blue-300 hover:text-blue-200 underline underline-offset-2"
+                >
+                  {commitHash}
+                </a>
+              ) : (
+                <span className="font-mono">{commitHash}</span>
+              )}
+            </p>
           </div>
         </motion.section>
       </div>
