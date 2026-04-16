@@ -49,8 +49,7 @@ export default function VerificationPage() {
           inviteCode: inviteCode
         };
       }
-    } catch (error) {
-      console.error('Failed to fetch server info', error);
+    } catch {
     }
     return null;
   };
@@ -163,17 +162,9 @@ export default function VerificationPage() {
       let body: any = { wechat_id: wechatId };
 
       switch (activeMethod) {
-        case 'adfs':
-          endpoint = `${__API_ENDPOINT__}/api/verify/adfs`;
-          body = { ...body, student_id: '12345678', student_name: 'John Doe', faculty: 'Engineering', email: 'john.doe@university.edu' };
-          break;
         case 'email':
           endpoint = `${__API_ENDPOINT__}/api/verify/email`;
           body = { ...body, email: `${emailPrefix}${UNIVERSITY_DOMAIN}`, code: verificationCode };
-          break;
-        case 'discord':
-          endpoint = `${__API_ENDPOINT__}/api/verify/discord`;
-          body = { ...body, discord_id: '123456789012345678' };
           break;
         case 'manual':
           endpoint = `${__API_ENDPOINT__}/api/verify/manual`;
@@ -350,7 +341,7 @@ export default function VerificationPage() {
                           value={verificationCode}
                           onChange={(e) => setVerificationCode(e.target.value)}
                           className="block w-full px-4 py-3 rounded-xl border border-slate-300 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
-                          placeholder="114514"
+                          placeholder="Enter verification code"
                         />
                       </div>
                     </motion.div>
@@ -371,7 +362,12 @@ export default function VerificationPage() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => {
-                          window.location.href = 'https://csclub.uwaterloo.ca/~y445wang/';
+                          if (__ADFS_PROVIDER_ENDPOINT__) {
+                            window.location.href = __ADFS_PROVIDER_ENDPOINT__;
+                          } else {
+                            setStatus('error');
+                            setMessage('ADFS provider is not configured.');
+                          }
                         }}
                         className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow-sm transition-colors"
                       >

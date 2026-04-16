@@ -154,17 +154,29 @@ export default function AboutPage() {
             
             <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-5 mb-8">
               <p className="text-sm text-blue-200 leading-relaxed">
-                <strong className="text-blue-400">Security Notice:</strong> Documentations and GitHub repos are open to trusted developers only at this time for security reasons. If you want to contribute to the project or integrate our API, please contact support.
+                <strong className="text-blue-400">Open Source:</strong> ROwO Auth is now open source. You can review the codebase, report issues, and contribute improvements through our public GitHub repository.
               </p>
             </div>
 
-            <a
-              href="mailto:dev@rowo.link"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-400 transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transform hover:-translate-y-0.5"
-            >
-              <Mail className="w-5 h-5" />
-              Contact Developer
-            </a>
+            <div className="flex flex-wrap items-center gap-3">
+              <a
+                href="https://github.com/Pitrick3141/rowo-auth"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-400 transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transform hover:-translate-y-0.5"
+              >
+                <Github className="w-5 h-5" />
+                View on GitHub
+                <ExternalLink className="w-4 h-4" />
+              </a>
+              <a
+                href="mailto:dev@rowo.link"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-slate-700 text-white rounded-xl font-medium hover:bg-slate-600 transition-colors"
+              >
+                <Mail className="w-5 h-5" />
+                Contact Developer
+              </a>
+            </div>
           </div>
         </motion.section>
       </div>

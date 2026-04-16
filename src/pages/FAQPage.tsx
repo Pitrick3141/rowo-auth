@@ -84,7 +84,7 @@ export default function FAQPage() {
           Our support team is available to assist you with any further inquiries or technical issues.
         </p>
         <a
-          href="mailto:support@rowo.auth"
+          href="mailto:dev@rowo.link"
           className="inline-flex items-center gap-2 px-6 py-3 bg-white text-indigo-600 font-bold rounded-xl hover:bg-indigo-50 transition-colors shadow-sm"
         >
           <Mail className="w-5 h-5" />

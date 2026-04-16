@@ -5,14 +5,18 @@
   "type": "module",
   "config": {
     "api_endpoint": "https://api.rowo.link",
-    "icon_url": "https://cdn.rowo.link/logo.png"
+    "icon_url": "https://cdn.rowo.link/logo.png",
+    "adfs_provider_endpoint": "https://adfs.example.edu/login"
   },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "dev:worker": "npx wrangler dev --config backend/wrangler.toml",
+    "deploy:worker": "npx wrangler deploy --config backend/wrangler.toml",
+    "deploy:worker:prod": "npx wrangler deploy --config backend/wrangler.toml --env production"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
