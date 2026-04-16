@@ -1,6 +1,6 @@
 /**
  * @license
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: MIT
  */
 
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
@@ -18,9 +18,11 @@ import FAQPage from './pages/FAQPage';
 
 function AdfsRedirect() {
   useEffect(() => {
-    window.location.href = 'https://csclub.uwaterloo.ca/~y445wang/';
+    if (__ADFS_PROVIDER_ENDPOINT__) {
+      window.location.href = __ADFS_PROVIDER_ENDPOINT__;
+    }
   }, []);
-  return <div className="p-8 text-center text-slate-500">Redirecting to ADFS...</div>;
+  return <div className="p-8 text-center text-slate-500">{__ADFS_PROVIDER_ENDPOINT__ ? 'Redirecting to ADFS...' : 'ADFS provider is not configured.'}</div>;
 }
 
 export default function App() {

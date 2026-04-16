@@ -1,7 +1,3 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
 # ROwO Auth
 
 ROwO Auth is a student verification portal that links WeChat IDs to verified student identities using multiple verification methods (ADFS, university email, Discord, and manual review).
@@ -71,8 +67,8 @@ Backend `backend/worker.js` expects runtime bindings/secrets such as:
 - Database binding: `auth_database`
 - Security: `SENSITIVE_DATA_HASH_SECRET`, `ADFS_JWT_SECRET`
 - Email (AWS SES): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SES_FROM_EMAIL`, `SES_FROM_NAME`
-- Discord: `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_REQUIRED_ROLE_ID`
-- Policy/rate-limit options: `EMAIL_SENDS_PER_MINUTE`, `CORS_ALLOW_ORIGINS`, `ALLOWED_EMAIL_DOMAIN`
+- Discord: `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `DISCORD_BOT_TOKEN`
+- Policy/rate-limit options: `EMAIL_SENDS_PER_MINUTE`, `CORS_ALLOW_ORIGINS`, `ALLOWED_EMAIL_DOMAIN`, `ADFS_PROVIDER_ENDPOINT`
 
 ## Available Scripts
 
@@ -80,6 +76,77 @@ Backend `backend/worker.js` expects runtime bindings/secrets such as:
 - `npm run build`: create production frontend build
 - `npm run preview`: preview production build locally
 - `npm run lint`: run TypeScript type-check (`tsc --noEmit`)
+- `npm run dev:worker`: run Worker locally with Wrangler config
+- `npm run deploy:worker`: deploy Worker using `backend/wrangler.toml`
+- `npm run deploy:worker:prod`: deploy Worker to `production` environment
+
+## Cloudflare Worker Deploy (CI/CD Ready)
+
+This repository includes Worker deployment config at `backend/wrangler.toml` for `backend/worker.js`.
+
+### One-time setup
+
+1. Update placeholders in `backend/wrangler.toml`:
+   - `account_id`
+   - `database_id` values under `d1_databases`
+2. Authenticate Wrangler locally:
+   - `npx wrangler login`
+3. Add required Worker secrets (encrypted values):
+   - `npx wrangler secret put SENSITIVE_DATA_HASH_SECRET --config backend/wrangler.toml --env production`
+   - `npx wrangler secret put ADFS_JWT_SECRET --config backend/wrangler.toml --env production`
+   - `npx wrangler secret put AWS_ACCESS_KEY_ID --config backend/wrangler.toml --env production`
+   - `npx wrangler secret put AWS_SECRET_ACCESS_KEY --config backend/wrangler.toml --env production`
+   - `npx wrangler secret put DISCORD_CLIENT_ID --config backend/wrangler.toml --env production`
+   - `npx wrangler secret put DISCORD_CLIENT_SECRET --config backend/wrangler.toml --env production`
+   - `npx wrangler secret put DISCORD_BOT_TOKEN --config backend/wrangler.toml --env production`
+4. Set plaintext variables in `backend/wrangler.toml` under `[vars]` and `[env.production.vars]` (already scaffolded in this repo).
+
+### Environment variable catalog
+
+#### Secrets (encrypted via `wrangler secret put`)
+
+- `ADFS_JWT_SECRET`: Authenticate requests and ensure they come from the ADFS provider.
+- `AWS_ACCESS_KEY_ID`: Send verification emails through AWS SES.
+- `AWS_SECRET_ACCESS_KEY`: Send verification emails through AWS SES.
+- `DISCORD_BOT_TOKEN`: Configure the Discord bot for Discord-based verification workflow.
+- `DISCORD_CLIENT_ID`: Configure Discord OAuth for Discord-based verification workflow.
+- `DISCORD_CLIENT_SECRET`: Configure Discord OAuth for Discord-based verification workflow.
+- `SENSITIVE_DATA_HASH_SECRET`: Hash identifiable student information for privacy compliance.
+
+#### Plaintext variables (configured in `wrangler.toml`)
+
+- `ALLOWED_EMAIL_DOMAIN = "uwaterloo.ca"`: Allow email domain for email-based verification.
+- `ADFS_PROVIDER_ENDPOINT = "https://adfs.example.edu/login"`: External ADFS provider endpoint used for frontend redirect/config wiring.
+- `AWS_REGION = "us-east-1"`: AWS SES region for verification email sending.
+- `CORS_ALLOW_ORIGINS = "*"`: Configure CORS allowlist.
+- `DISCORD_REDIRECT_URI = "https://rowo.link/verify/discord/callback"`: Callback URL for Discord-based verification workflow.
+- `EMAIL_SENDS_PER_MINUTE = "60"`: Email send rate limit for email-based verification workflow.
+- `SES_FROM_EMAIL = "verification@rowo.link"`: Sender address for verification emails.
+- `SES_FROM_NAME = "ROwO Auth"`: Sender display name for verification emails.
+
+Trusted Discord guild/role pairs are configured in D1 (`discord_trusted_servers` table), not in environment variables.
+
+### Deploy commands
+
+- Default deploy:
+  - `npm run deploy:worker`
+- Production deploy (for `main` branch release pipeline):
+  - `npm run deploy:worker:prod`
+
+For Cloudflare CI/CD, use the same production command (`npx wrangler deploy --config backend/wrangler.toml --env production`) in your `main` branch pipeline.
+
+### D1 schema migration
+
+Apply `backend/schema.sql` to initialize or migrate the `auth_database` D1 database:
+
+- Local/default database:
+  - `npx wrangler d1 execute rowo-auth-db --file backend/schema.sql --config backend/wrangler.toml`
+- Production environment database:
+  - `npx wrangler d1 execute rowo-auth-db --file backend/schema.sql --config backend/wrangler.toml --env production`
+
+If your D1 database name differs from `rowo-auth-db`, replace it in the command accordingly.
+
+The schema includes `discord_trusted_servers` and seeds one active trusted guild/role pair. Update that table in D1 to manage trusted Discord sources.
 
 ## API Route Overview
 
@@ -117,6 +184,25 @@ Admin routes:
 - Keep admin tokens private and rotate them when exposed.
 - Restrict `CORS_ALLOW_ORIGINS` in production (avoid `*` where possible).
 - Configure `ALLOWED_EMAIL_DOMAIN` to enforce institutional email domain policy.
+- Internal backend exceptions are logged server-side and returned to clients as generic error messages.
+
+## Data Handling Notes
+
+- Core account identity correlation fields are stored using SHA-256 based keyed hashing.
+- Some operational values are plaintext by design (for example WeChat IDs and moderation/admin metadata).
+- Pending email verification data includes plaintext normalized email until verification completes or expires.
+- Subprocessors/services used by this project:
+  - Cloudflare Workers + D1 (runtime and database)
+  - AWS SES (verification email delivery)
+  - Discord APIs (OAuth and guild/role verification)
+- Retention behavior:
+  - verification artifacts and rename tokens are short-lived
+  - rate-limit rows are pruned periodically
+  - account/moderation records persist until updated or manually removed
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Development and Contribution
 

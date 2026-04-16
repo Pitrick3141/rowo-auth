@@ -5,6 +5,19 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+function logServerError(context, error, metadata = {}) {
+  console.error(`[${context}]`, {
+    message: String(error?.message || error),
+    stack: error?.stack || null,
+    ...metadata,
+  });
+}
+
+function genericError(context, error, status = 500, message = 'Internal server error.', metadata = {}) {
+  logServerError(context, error, metadata);
+  return jsonResponse({ success: false, message }, status);
+}
+
 async function parseJson(request) {
   try {
     return await request.json();
@@ -351,9 +364,8 @@ async function fetchDiscordIdentity(accessToken) {
   );
 }
 
-async function fetchDiscordGuildMember(env, discordId) {
+async function fetchDiscordGuildMember(env, guildId, discordId) {
   const botToken = env.DISCORD_BOT_TOKEN;
-  const guildId = env.DISCORD_GUILD_ID;
 
   if (!botToken || !guildId) {
     throw new Error('Missing Discord bot configuration in environment variables');
@@ -371,6 +383,55 @@ async function fetchDiscordGuildMember(env, discordId) {
   );
 }
 
+async function getTrustedDiscordServers(env) {
+  return queryAll(
+    env,
+    `
+      SELECT guild_id, role_id
+      FROM discord_trusted_servers
+      WHERE is_active = 1
+      ORDER BY id ASC
+    `
+  );
+}
+
+function isDiscordMembershipNotFoundError(error) {
+  const message = String(error?.message || '');
+  return message.includes(': 404 ');
+}
+
+async function resolveTrustedDiscordMembership(env, discordId) {
+  const trustedServers = await getTrustedDiscordServers(env);
+  if (trustedServers.length === 0) {
+    throw new Error('No active trusted Discord servers configured in database');
+  }
+
+  for (const server of trustedServers) {
+    const guildId = String(server.guild_id || '').trim();
+    const roleId = String(server.role_id || '').trim();
+    if (!guildId || !roleId) {
+      continue;
+    }
+
+    let guildMember;
+    try {
+      guildMember = await fetchDiscordGuildMember(env, guildId, discordId);
+    } catch (error) {
+      if (isDiscordMembershipNotFoundError(error)) {
+        continue;
+      }
+      throw error;
+    }
+
+    const roles = Array.isArray(guildMember?.roles) ? guildMember.roles : [];
+    if (roles.includes(roleId)) {
+      return { guildId, roleId };
+    }
+  }
+
+  return null;
+}
+
 async function getCachedDiscordVerification(env, plainDiscordId) {
   const hashedId = await hashSensitive(env, 'discord_id', plainDiscordId);
   if (!hashedId) return null;
@@ -386,9 +447,7 @@ async function getCachedDiscordVerification(env, plainDiscordId) {
   );
 }
 
-async function cacheDiscordVerification(env, discordId, discordName) {
-  const guildId = String(env.DISCORD_GUILD_ID || '').trim();
-  const roleId = String(env.DISCORD_REQUIRED_ROLE_ID || '').trim();
+async function cacheDiscordVerification(env, discordId, discordName, guildId, roleId) {
   const hashedId = await hashSensitive(env, 'discord_id', discordId);
   const hashedName = await hashSensitive(env, 'discord_name', discordName || '');
   if (!hashedId) return;
@@ -575,6 +634,10 @@ async function handleRequest(request, env) {
     }
 
     if (method === 'POST' && pathname === '/api/adfs/create-code') {
+      const adfsProviderEndpoint = String(env.ADFS_PROVIDER_ENDPOINT || '').trim();
+      if (!adfsProviderEndpoint) {
+        return jsonResponse({ success: false, message: 'ADFS provider is not configured.' }, 500);
+      }
       const authHeader = request.headers.get('authorization') || '';
       const jwtValid = await verifyAdfsCreateCodeJwt(env, authHeader);
       if (!jwtValid) {
@@ -594,8 +657,8 @@ async function handleRequest(request, env) {
         hashStudentId = await hashSensitive(env, 'student_id', student_id);
         hashStudentName = await hashSensitive(env, 'student_name', student_name || '');
         hashEmail = await hashSensitive(env, 'email', email ? normalizeEmail(email) : '');
-      } catch (err) {
-        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      } catch (error) {
+        return genericError('adfs_create_code_hash', error, 500, 'Server configuration error.');
       }
 
       const code = generateAdfsCode();
@@ -757,8 +820,8 @@ async function handleRequest(request, env) {
         let emailHash;
         try {
           emailHash = await hashSensitive(env, 'email', normalizedEmail);
-        } catch {
-          return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+        } catch (error) {
+          return genericError('verify_email_hash', error, 500, 'Server configuration error.');
         }
         const emailUsedByOtherWechat = await queryFirst(
           env,
@@ -839,14 +902,7 @@ async function handleRequest(request, env) {
         try {
           await sendVerificationEmailWithSes(env, normalizedEmail, newCode);
         } catch (error) {
-          return jsonResponse(
-            {
-              success: false,
-              message: 'Failed to send verification email.',
-              error: String(error?.message || error),
-            },
-            500
-          );
+          return genericError('verify_email_send', error, 500, 'Failed to send verification email.');
         }
 
         return jsonResponse({
@@ -929,8 +985,8 @@ async function handleRequest(request, env) {
       let emailHashForStorage;
       try {
         emailHashForStorage = await hashSensitive(env, 'email', normalizedEmail);
-      } catch {
-        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      } catch (error) {
+        return genericError('verify_email_store_hash', error, 500, 'Server configuration error.');
       }
       await execRun(
         env,
@@ -968,14 +1024,7 @@ async function handleRequest(request, env) {
         const accessToken = await exchangeDiscordOauthCode(env, code);
         discordIdentity = await fetchDiscordIdentity(accessToken);
       } catch (error) {
-        return jsonResponse(
-          {
-            success: false,
-            message: 'Failed to validate Discord OAuth code.',
-            error: String(error?.message || error),
-          },
-          400
-        );
+        return genericError('discord_oauth_callback', error, 400, 'Failed to validate Discord OAuth code.');
       }
 
       const discordId = String(discordIdentity?.id || '').trim();
@@ -991,8 +1040,8 @@ async function handleRequest(request, env) {
       let cachedVerification;
       try {
         cachedVerification = await getCachedDiscordVerification(env, discordId);
-      } catch {
-        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      } catch (error) {
+        return genericError('discord_cache_lookup', error, 500, 'Server configuration error.');
       }
       if (cachedVerification) {
         return jsonResponse({
@@ -1004,46 +1053,33 @@ async function handleRequest(request, env) {
         });
       }
 
-      const requiredRoleId = String(env.DISCORD_REQUIRED_ROLE_ID || '').trim();
-      if (!requiredRoleId) {
-        return jsonResponse(
-          {
-            success: false,
-            message: 'Server configuration missing DISCORD_REQUIRED_ROLE_ID.',
-          },
-          500
-        );
-      }
-
-      let guildMember;
+      let trustedMembership;
       try {
-        guildMember = await fetchDiscordGuildMember(env, discordId);
+        trustedMembership = await resolveTrustedDiscordMembership(env, discordId);
       } catch (error) {
-        return jsonResponse(
-          {
-            success: false,
-            message: 'Discord user is not present in the required server.',
-            error: String(error?.message || error),
-          },
-          403
-        );
+        return genericError('discord_membership_check', error, 500, 'Failed to validate Discord server membership.');
       }
 
-      const roles = Array.isArray(guildMember?.roles) ? guildMember.roles : [];
-      if (!roles.includes(requiredRoleId)) {
+      if (!trustedMembership) {
         return jsonResponse(
           {
             success: false,
-            message: 'Discord user does not hold the required role.',
+            message: 'Discord user is not in a trusted server with the required role.',
           },
           403
         );
       }
 
       try {
-        await cacheDiscordVerification(env, discordId, discordName);
-      } catch {
-        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+        await cacheDiscordVerification(
+          env,
+          discordId,
+          discordName,
+          trustedMembership.guildId,
+          trustedMembership.roleId
+        );
+      } catch (error) {
+        return genericError('discord_cache_store', error, 500, 'Server configuration error.');
       }
 
       return jsonResponse({
@@ -1071,8 +1107,8 @@ async function handleRequest(request, env) {
       let verifiedDiscord;
       try {
         verifiedDiscord = await getCachedDiscordVerification(env, String(discord_id));
-      } catch {
-        return jsonResponse({ success: false, message: 'Server configuration error.' }, 500);
+      } catch (error) {
+        return genericError('discord_connect_cache_lookup', error, 500, 'Server configuration error.');
       }
       if (!verifiedDiscord) {
         return jsonResponse(
@@ -1764,7 +1800,15 @@ export default {
       return corsPreflightResponse(request, env);
     }
 
-    const response = await handleRequest(request, env);
+    let response;
+    try {
+      response = await handleRequest(request, env);
+    } catch (error) {
+      response = genericError('unhandled_request_error', error, 500, 'Internal server error.', {
+        method: request.method,
+        url: request.url,
+      });
+    }
     return withCors(response, request, env);
   },
 };

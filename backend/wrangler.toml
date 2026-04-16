@@ -1,0 +1,41 @@
+name = "rowo-auth"
+main = "worker.js"
+compatibility_date = "2026-04-16"
+workers_dev = false
+
+# Set this in CI or locally before deploy:
+# CLOUDFLARE_ACCOUNT_ID=your_account_id
+account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+
+[[d1_databases]]
+binding = "auth_database"
+database_name = "rowo-auth-db"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[vars]
+ADFS_PROVIDER_ENDPOINT = "https://adfs.example.edu/login"
+ALLOWED_EMAIL_DOMAIN = "uwaterloo.ca"
+AWS_REGION = "us-east-1"
+CORS_ALLOW_ORIGINS = "*"
+DISCORD_REDIRECT_URI = "https://rowo.link/verify/discord/callback"
+EMAIL_SENDS_PER_MINUTE = "60"
+SES_FROM_EMAIL = "verification@rowo.link"
+SES_FROM_NAME = "ROwO Auth"
+
+[env.production]
+name = "rowo-auth"
+
+[[env.production.d1_databases]]
+binding = "auth_database"
+database_name = "rowo-auth-db"
+database_id = "YOUR_PRODUCTION_D1_DATABASE_ID"
+
+[env.production.vars]
+ADFS_PROVIDER_ENDPOINT = "https://adfs.example.edu/login"
+ALLOWED_EMAIL_DOMAIN = "uwaterloo.ca"
+AWS_REGION = "us-east-1"
+CORS_ALLOW_ORIGINS = "*"
+DISCORD_REDIRECT_URI = "https://rowo.link/verify/discord/callback"
+EMAIL_SENDS_PER_MINUTE = "60"
+SES_FROM_EMAIL = "verification@rowo.link"
+SES_FROM_NAME = "ROwO Auth"
