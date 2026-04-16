@@ -62,6 +62,7 @@ CREATE TABLE discord_trusted_servers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id TEXT NOT NULL,
   role_id TEXT NOT NULL,
+  invite_code TEXT,
   label TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -106,3 +107,5 @@ CREATE INDEX idx_account_blacklist_active
 ON account_blacklist(is_active);
 CREATE INDEX idx_discord_trusted_servers_active_guild
 ON discord_trusted_servers(is_active, guild_id);
+CREATE INDEX idx_discord_trusted_servers_invite_code
+ON discord_trusted_servers(invite_code);

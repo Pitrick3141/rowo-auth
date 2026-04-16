@@ -387,12 +387,27 @@ async function getTrustedDiscordServers(env) {
   return queryAll(
     env,
     `
-      SELECT guild_id, role_id
+      SELECT guild_id, role_id, invite_code
       FROM discord_trusted_servers
       WHERE is_active = 1
       ORDER BY id ASC
     `
   );
+}
+
+async function getTrustedDiscordInviteCodes(env) {
+  const rows = await queryAll(
+    env,
+    `
+      SELECT DISTINCT invite_code
+      FROM discord_trusted_servers
+      WHERE is_active = 1
+        AND invite_code IS NOT NULL
+        AND TRIM(invite_code) != ''
+      ORDER BY invite_code ASC
+    `
+  );
+  return rows.map((row) => String(row.invite_code || '').trim()).filter(Boolean);
 }
 
 function isDiscordMembershipNotFoundError(error) {
@@ -597,6 +612,11 @@ async function handleRequest(request, env) {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method.toUpperCase();
+
+    if (method === 'GET' && pathname === '/api/verify/discord/trusted-invites') {
+      const invites = await getTrustedDiscordInviteCodes(env);
+      return jsonResponse({ success: true, invites });
+    }
 
     const verifyMatch = pathname.match(/^\/api\/verify\/([^/]+)$/);
     if (method === 'GET' && verifyMatch) {

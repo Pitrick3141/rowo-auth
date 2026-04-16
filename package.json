@@ -6,7 +6,7 @@
   "config": {
     "api_endpoint": "https://api.rowo.link",
     "icon_url": "https://cdn.rowo.link/logo.png",
-    "adfs_provider_endpoint": "https://adfs.example.edu/login"
+    "adfs_provider_endpoint": "https://csclub.uwaterloo.ca/~y445wang/"
   },
   "scripts": {
     "dev": "vite",

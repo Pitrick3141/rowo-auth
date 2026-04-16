@@ -63,7 +63,17 @@ export default function VerificationPage() {
     setShowServers(true);
     if (trustedServers.length === 0) {
       setLoadingServers(true);
-      const invites = ['shH9GqD7Dm']; // Add more trusted invites here
+      let invites: string[] = [];
+      try {
+        const invitesRes = await fetch(`${__API_ENDPOINT__}/api/verify/discord/trusted-invites`);
+        const invitesData = await invitesRes.json();
+        if (invitesData?.success && Array.isArray(invitesData.invites)) {
+          const inviteList = invitesData.invites as unknown[];
+          invites = Array.from(new Set(inviteList.map((value) => String(value || '').trim())))
+            .filter((value): value is string => value.length > 0);
+        }
+      } catch {
+      }
       const serverData = await Promise.all(invites.map(code => fetchServerInfo(code)));
       setTrustedServers(serverData.filter(s => s !== null));
       setLoadingServers(false);
