@@ -1521,6 +1521,41 @@ async function handleRequest(request, env) {
       return jsonResponse({ success: true, message: `Application ${action}d.` });
     }
 
+    const contactMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/contact$/);
+    if (method === 'POST' && contactMatch) {
+      const auth = await requireAuth(request, env);
+      if (auth.response) return auth.response;
+
+      const wechatId = decodeURIComponent(contactMatch[1]);
+
+      const existing = await queryFirst(
+        env,
+        `SELECT id, creator, updated_at FROM account_info
+         WHERE wechat_id = ? AND title = 'User Contacted' LIMIT 1`,
+        [wechatId]
+      );
+      if (existing) {
+        return jsonResponse({
+          success: true,
+          already: true,
+          creator: existing.creator,
+          updated_at: existing.updated_at,
+        });
+      }
+
+      const contactBody = `Contacted by **${auth.admin.username}** at **${new Date().toISOString()}**. Please do not contact again.`;
+      await execRun(
+        env,
+        `
+          INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [wechatId, 'emerald', 'checkmark', 'User Contacted', contactBody, auth.admin.username, 'private']
+      );
+
+      return jsonResponse({ success: true });
+    }
+
     const blacklistMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/blacklist$/);
     if (method === 'POST' && blacklistMatch) {
       const auth = await requireAdmin(request, env);

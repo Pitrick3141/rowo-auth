@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShieldCheck, UserCheck, ShieldAlert, Info, HelpCircle } from 'lucide-react';
+import { ShieldCheck, UserCheck, ShieldAlert, Info, HelpCircle, Github } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -21,7 +21,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <img src={__ICON_URL__} alt="ROwO Auth Logo" className="w-8 h-8 rounded-xl" referrerPolicy="no-referrer" />
             <span className="font-semibold text-lg tracking-tight text-slate-800">ROwO Auth</span>
           </div>
-          <nav className="flex gap-1">
+          <nav className="flex gap-1 items-center">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -41,6 +41,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
+            <a
+              href="https://github.com/Pitrick3141/rowo-auth"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GitHub repository"
+              className="flex items-center p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+            >
+              <Github className="w-4 h-4" />
+            </a>
           </nav>
         </div>
       </header>
