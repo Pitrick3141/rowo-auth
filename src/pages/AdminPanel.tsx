@@ -550,6 +550,20 @@ function AccountModal({
     }
   };
 
+  const handleMarkContacted = async () => {
+    setSaving(true);
+    try {
+      await fetch(`${__API_ENDPOINT__}/api/admin/accounts/${encodeURIComponent(account.wechat_id)}/contact`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      await fetchInfo();
+    } catch {
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleManualAction = async (action: 'approve' | 'reject') => {
     if (action === 'reject' && !rejectReason.trim()) {
       setRejectAlertOpen(true);
@@ -674,6 +688,28 @@ function AccountModal({
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{account.notes}</p>
                 </div>
               )}
+              {(() => {
+                const contactNote = infoItems.find(i => i.title === 'User Contacted');
+                if (contactNote) {
+                  return (
+                    <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                      <div className="text-xs text-emerald-800">
+                        Already contacted by <b>{contactNote.creator}</b> on {format(new Date(contactNote.updated_at.endsWith('Z') ? contactNote.updated_at : contactNote.updated_at + 'Z'), 'MMM d, yyyy HH:mm')}. Do not contact again.
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    onClick={handleMarkContacted}
+                    disabled={saving}
+                    className="w-full mb-3 bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex justify-center items-center gap-2 disabled:opacity-50"
+                  >
+                    <CheckCircle className="w-4 h-4" /> I have contacted this person
+                  </button>
+                );
+              })()}
               <div className="space-y-3">
                 <textarea
                   value={rejectReason}
