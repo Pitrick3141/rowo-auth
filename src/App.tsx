@@ -9,6 +9,7 @@ import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
 import VerificationPage from './pages/VerificationPage';
 import DiscordCallback from './pages/DiscordCallback';
+import GitHubCallback from './pages/GitHubCallback';
 import AdfsCallback from './pages/AdfsCallback';
 import AdminPanel from './pages/AdminPanel';
 import AboutPage from './pages/AboutPage';
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/verify" element={<VerificationPage />} />
           <Route path="/verify/discord/callback" element={<DiscordCallback />} />
+          <Route path="/verify/github/callback" element={<GitHubCallback />} />
           <Route path="/verify/adfs/callback" element={<AdfsCallback />} />
           <Route path="/adfs" element={<AdfsRedirect />} />
           <Route path="/admin" element={<AdminPanel />} />

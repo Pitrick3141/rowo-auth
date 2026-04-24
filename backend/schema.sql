@@ -8,6 +8,7 @@ CREATE TABLE accounts (
   student_name TEXT,
   email TEXT,
   discord_id TEXT,
+  github_id TEXT,
   manual_status TEXT,
   manual_reason TEXT,
   manual_admin TEXT,
@@ -58,6 +59,13 @@ CREATE TABLE discord_verified_identities (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE github_verified_identities (
+  github_id TEXT PRIMARY KEY,
+  github_login TEXT NOT NULL,
+  matched_email_domain TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE discord_trusted_servers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id TEXT NOT NULL,
@@ -103,6 +111,8 @@ CREATE INDEX idx_email_send_rate_limits_updated_at
   ON email_send_rate_limits (updated_at);
 CREATE INDEX idx_accounts_discord_id
 ON accounts(discord_id);
+CREATE INDEX idx_accounts_github_id
+ON accounts(github_id);
 CREATE INDEX idx_account_blacklist_active
 ON account_blacklist(is_active);
 CREATE INDEX idx_discord_trusted_servers_active_guild

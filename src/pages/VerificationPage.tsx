@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Mail, MessageSquare, AlertCircle, CheckCircle2, ChevronRight, Lock } from 'lucide-react';
+import { Shield, Mail, MessageSquare, AlertCircle, CheckCircle2, ChevronRight, Lock, Github } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 
@@ -15,7 +15,7 @@ const DiscordIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-type VerificationMethod = 'adfs' | 'email' | 'discord' | 'manual';
+type VerificationMethod = 'adfs' | 'email' | 'discord' | 'github' | 'manual';
 
 const UNIVERSITY_DOMAIN = '@uwaterloo.ca';
 
@@ -147,6 +147,16 @@ export default function VerificationPage() {
       color: 'bg-violet-100 text-violet-600',
       border: 'border-violet-200',
       activeBorder: 'border-violet-500 ring-1 ring-violet-500',
+    },
+    {
+      id: 'github',
+      title: 'GitHub Account',
+      description: 'Link your GitHub account if it has a verified university email.',
+      icon: Github,
+      disabled: false,
+      color: 'bg-slate-100 text-slate-800',
+      border: 'border-slate-200',
+      activeBorder: 'border-slate-800 ring-1 ring-slate-800',
     },
     {
       id: 'manual',
@@ -284,7 +294,7 @@ export default function VerificationPage() {
 
             <form onSubmit={handleVerify} className="flex-1 flex flex-col">
               <div className="space-y-6 flex-1">
-                {activeMethod !== 'discord' && activeMethod !== 'adfs' && (
+                {activeMethod !== 'discord' && activeMethod !== 'adfs' && activeMethod !== 'github' && (
                   <div>
                     <label htmlFor="wechatId" className="block text-sm font-medium text-slate-700 mb-2">
                       WeChat ID
@@ -474,6 +484,39 @@ export default function VerificationPage() {
                     </motion.div>
                   )}
 
+                  {activeMethod === 'github' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-6"
+                    >
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
+                        Clicking verify will redirect you to GitHub to authenticate. Your GitHub account must have at least one verified university email on file.
+                      </div>
+                      <motion.button
+                        type="button"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          const clientId = __GITHUB_CLIENT_ID__;
+                          if (!clientId) {
+                            setStatus('error');
+                            setMessage('GitHub OAuth is not configured.');
+                            return;
+                          }
+                          const redirectUri = encodeURIComponent(`${window.location.origin}/verify/github/callback`);
+                          const scope = encodeURIComponent('user:email');
+                          window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl shadow-sm transition-colors"
+                      >
+                        <Github className="w-5 h-5" />
+                        Connect with GitHub
+                      </motion.button>
+                    </motion.div>
+                  )}
+
                   {activeMethod === 'manual' && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
@@ -495,7 +538,7 @@ export default function VerificationPage() {
               </div>
 
               <div className="mt-8 pt-6 border-t border-slate-100">
-                {activeMethod !== 'discord' && activeMethod !== 'adfs' && (
+                {activeMethod !== 'discord' && activeMethod !== 'adfs' && activeMethod !== 'github' && (
                   <motion.button
                     type="submit"
                     whileHover={{ scale: 1.02 }}
