@@ -1,6 +1,6 @@
 # ROwO Auth
 
-ROwO Auth is a student verification portal that links WeChat IDs to verified student identities using multiple verification methods (ADFS, university email, Discord, and manual review).
+ROwO Auth is a student verification portal that links WeChat IDs to verified student identities using multiple verification methods (ADFS, university email, Discord, GitHub, and manual review).
 
 ## What This Project Contains
 
@@ -12,13 +12,13 @@ ROwO Auth is a student verification portal that links WeChat IDs to verified stu
   - verification APIs
   - admin APIs
   - rename token flow
-  - email sending and Discord integration
+  - email sending, Discord, and GitHub integrations
 
 ## Tech Stack
 
 - Frontend: React, TypeScript, Vite, Tailwind CSS
 - Backend: Cloudflare Worker (JavaScript), D1 database binding (`auth_database`)
-- Integrations: AWS SES (email), Discord OAuth/API
+- Integrations: AWS SES (email), Discord OAuth/API, GitHub OAuth/API
 
 ## Project Structure
 
@@ -53,8 +53,10 @@ The frontend uses constants from `package.json`:
 
 - `config.api_endpoint`: base URL used by all frontend API requests
 - `config.icon_url`: icon URL injected into HTML
+- `config.adfs_provider_endpoint`: external ADFS provider URL the "Login with ADFS" button redirects to
+- `config.github_client_id`: GitHub OAuth App client ID used by the GitHub verification flow
 
-These values are exposed as `__API_ENDPOINT__` and `__ICON_URL__` at build time.
+These values are exposed as `__API_ENDPOINT__`, `__ICON_URL__`, `__ADFS_PROVIDER_ENDPOINT__`, and `__GITHUB_CLIENT_ID__` at build time.
 
 ### Environment Variables
 
@@ -68,6 +70,7 @@ Backend `backend/worker.js` expects runtime bindings/secrets such as:
 - Security: `SENSITIVE_DATA_HASH_SECRET`, `ADFS_JWT_SECRET`
 - Email (AWS SES): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SES_FROM_EMAIL`, `SES_FROM_NAME`
 - Discord: `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `DISCORD_BOT_TOKEN`
+- GitHub: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
 - Policy/rate-limit options: `EMAIL_SENDS_PER_MINUTE`, `CORS_ALLOW_ORIGINS`, `ALLOWED_EMAIL_DOMAIN`, `ADFS_PROVIDER_ENDPOINT`
 
 ## Available Scripts
@@ -99,6 +102,7 @@ This repository includes Worker deployment config at `backend/wrangler.toml` for
    - `npx wrangler secret put DISCORD_CLIENT_ID --config backend/wrangler.toml --env production`
    - `npx wrangler secret put DISCORD_CLIENT_SECRET --config backend/wrangler.toml --env production`
    - `npx wrangler secret put DISCORD_BOT_TOKEN --config backend/wrangler.toml --env production`
+   - `npx wrangler secret put GITHUB_CLIENT_SECRET --config backend/wrangler.toml --env production`
 4. Set plaintext variables in `backend/wrangler.toml` under `[vars]` and `[env.production.vars]` (already scaffolded in this repo).
 
 ### Environment variable catalog
@@ -111,6 +115,7 @@ This repository includes Worker deployment config at `backend/wrangler.toml` for
 - `DISCORD_BOT_TOKEN`: Configure the Discord bot for Discord-based verification workflow.
 - `DISCORD_CLIENT_ID`: Configure Discord OAuth for Discord-based verification workflow.
 - `DISCORD_CLIENT_SECRET`: Configure Discord OAuth for Discord-based verification workflow.
+- `GITHUB_CLIENT_SECRET`: Configure GitHub OAuth for GitHub-based verification workflow.
 - `SENSITIVE_DATA_HASH_SECRET`: Hash identifiable student information for privacy compliance.
 
 #### Plaintext variables (configured in `wrangler.toml`)
@@ -121,6 +126,7 @@ This repository includes Worker deployment config at `backend/wrangler.toml` for
 - `CORS_ALLOW_ORIGINS = "*"`: Configure CORS allowlist.
 - `DISCORD_REDIRECT_URI = "https://rowo.link/verify/discord/callback"`: Callback URL for Discord-based verification workflow.
 - `EMAIL_SENDS_PER_MINUTE = "60"`: Email send rate limit for email-based verification workflow.
+- `GITHUB_CLIENT_ID = ""`: Configure GitHub OAuth for GitHub-based verification workflow.
 - `SES_FROM_EMAIL = "verification@rowo.link"`: Sender address for verification emails.
 - `SES_FROM_NAME = "ROwO Auth"`: Sender display name for verification emails.
 
@@ -158,6 +164,8 @@ Core verification routes:
 - `POST /api/verify/email`
 - `POST /api/verify/discord/callback`
 - `POST /api/verify/discord/connect`
+- `POST /api/verify/github/callback`
+- `POST /api/verify/github/connect`
 - `POST /api/verify/manual`
 
 Account rename routes:
@@ -195,6 +203,7 @@ Admin routes:
   - Cloudflare Workers + D1 (runtime and database)
   - AWS SES (verification email delivery)
   - Discord APIs (OAuth and guild/role verification)
+  - GitHub APIs (OAuth and verified-email domain check)
 - Retention behavior:
   - verification artifacts and rename tokens are short-lived
   - rate-limit rows are pruned periodically
@@ -225,5 +234,9 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
   - check AWS SES credentials, sender identity, and region
 - Discord verification fails:
   - check OAuth redirect URI and guild/role related env vars
+- GitHub verification fails:
+  - check `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` and `config.github_client_id` in `package.json`
+  - ensure the GitHub OAuth App's "Authorization callback URL" matches the origin the frontend is served from
+  - user's GitHub account must have at least one verified email under `ALLOWED_EMAIL_DOMAIN`
 - Admin panel cannot authenticate:
   - ensure admin token exists in backend data and is sent as Bearer token

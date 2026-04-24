@@ -29,6 +29,7 @@ export default defineConfig(() => {
       '__API_ENDPOINT__': JSON.stringify(pkg.config.api_endpoint),
       '__ICON_URL__': JSON.stringify(pkg.config.icon_url),
       '__ADFS_PROVIDER_ENDPOINT__': JSON.stringify(pkg.config.adfs_provider_endpoint),
+      '__GITHUB_CLIENT_ID__': JSON.stringify(pkg.config.github_client_id),
       '__GIT_COMMIT_HASH__': JSON.stringify(gitCommitHash),
     },
     resolve: {

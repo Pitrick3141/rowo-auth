@@ -482,6 +482,158 @@ async function cacheDiscordVerification(env, discordId, discordName, guildId, ro
   );
 }
 
+async function githubApiJson(url, options, errorPrefix) {
+  const response = await fetch(url, options);
+  const rawBody = await response.text();
+
+  let parsedBody;
+  try {
+    parsedBody = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    parsedBody = { raw: rawBody };
+  }
+
+  if (!response.ok) {
+    const message = parsedBody?.error_description || parsedBody?.message || rawBody || 'Unknown error';
+    throw new Error(`${errorPrefix}: ${response.status} ${message}`);
+  }
+
+  return parsedBody;
+}
+
+async function exchangeGithubOauthCode(env, code) {
+  const clientId = env.GITHUB_CLIENT_ID;
+  const clientSecret = env.GITHUB_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error('Missing GitHub OAuth configuration in environment variables');
+  }
+
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    code: String(code || ''),
+  }).toString();
+
+  const tokenResult = await githubApiJson(
+    'https://github.com/login/oauth/access_token',
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'accept': 'application/json',
+        'user-agent': 'rowo-auth',
+      },
+      body,
+    },
+    'GitHub OAuth token exchange failed'
+  );
+
+  if (tokenResult?.error) {
+    throw new Error(
+      `GitHub OAuth token exchange rejected: ${tokenResult.error}${
+        tokenResult.error_description ? ` - ${tokenResult.error_description}` : ''
+      }`
+    );
+  }
+
+  if (!tokenResult?.access_token) {
+    const snapshot = typeof tokenResult === 'object' && tokenResult !== null
+      ? JSON.stringify(tokenResult).slice(0, 500)
+      : String(tokenResult).slice(0, 500);
+    throw new Error(`GitHub OAuth token exchange returned no access_token. Body: ${snapshot}`);
+  }
+
+  return tokenResult.access_token;
+}
+
+async function fetchGithubUser(accessToken) {
+  return githubApiJson(
+    'https://api.github.com/user',
+    {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        accept: 'application/vnd.github+json',
+        'user-agent': 'rowo-auth',
+        'x-github-api-version': '2022-11-28',
+      },
+    },
+    'GitHub user lookup failed'
+  );
+}
+
+async function fetchGithubUserEmails(accessToken) {
+  const emails = await githubApiJson(
+    'https://api.github.com/user/emails',
+    {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        accept: 'application/vnd.github+json',
+        'user-agent': 'rowo-auth',
+        'x-github-api-version': '2022-11-28',
+      },
+    },
+    'GitHub user emails lookup failed'
+  );
+  return Array.isArray(emails) ? emails : [];
+}
+
+/** Returns the allowed domain if any verified GitHub email's domain matches ALLOWED_EMAIL_DOMAIN; else null. */
+async function resolveGithubAllowedDomain(env, accessToken) {
+  const allowedDomain = String(env.ALLOWED_EMAIL_DOMAIN || '').trim().toLowerCase();
+  if (!allowedDomain) {
+    throw new Error('ALLOWED_EMAIL_DOMAIN is not configured');
+  }
+
+  const emails = await fetchGithubUserEmails(accessToken);
+  for (const entry of emails) {
+    if (!entry || entry.verified !== true) continue;
+    const normalized = normalizeEmail(entry.email);
+    if (!normalized) continue;
+    const domain = getEmailDomain(normalized);
+    if (domain === allowedDomain) {
+      return allowedDomain;
+    }
+  }
+  return null;
+}
+
+async function getCachedGithubVerification(env, plainGithubId) {
+  const hashedId = await hashSensitive(env, 'github_id', plainGithubId);
+  if (!hashedId) return null;
+  return queryFirst(
+    env,
+    `
+      SELECT github_id, github_login, matched_email_domain
+      FROM github_verified_identities
+      WHERE github_id = ?
+      LIMIT 1
+    `,
+    [hashedId]
+  );
+}
+
+async function cacheGithubVerification(env, githubId, githubLogin, matchedDomain) {
+  const hashedId = await hashSensitive(env, 'github_id', githubId);
+  const hashedLogin = await hashSensitive(env, 'github_login', githubLogin || '');
+  if (!hashedId) return;
+
+  await execRun(
+    env,
+    `
+      INSERT INTO github_verified_identities (github_id, github_login, matched_email_domain, created_at, updated_at)
+      VALUES (?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(github_id) DO UPDATE SET
+        github_login = excluded.github_login,
+        matched_email_domain = excluded.matched_email_domain,
+        updated_at = datetime('now')
+    `,
+    [hashedId, hashedLogin, matchedDomain]
+  );
+}
+
 async function getActiveBlacklistRecord(env, wechatId) {
   return queryFirst(
     env,
@@ -1216,6 +1368,191 @@ async function handleRequest(request, env) {
       });
     }
 
+    if (method === 'POST' && pathname === '/api/verify/github/callback') {
+      const body = await parseJson(request);
+      const { code } = body;
+
+      if (!code) {
+        return jsonResponse({ success: false, message: 'code is required.' }, 400);
+      }
+
+      const allowedDomain = String(env.ALLOWED_EMAIL_DOMAIN || '').trim().toLowerCase();
+      if (!allowedDomain) {
+        return jsonResponse({ success: false, message: 'Allowed email domain is not configured.' }, 500);
+      }
+
+      let githubUser;
+      let accessToken;
+      try {
+        accessToken = await exchangeGithubOauthCode(env, code);
+        githubUser = await fetchGithubUser(accessToken);
+      } catch (error) {
+        return genericError('github_oauth_callback', error, 400, 'Failed to validate GitHub OAuth code.');
+      }
+
+      const githubId = String(githubUser?.id || '').trim();
+      const githubLogin = String(githubUser?.login || githubUser?.id || '').trim();
+      const userAvatar = String(githubUser?.avatar_url || '').trim();
+
+      if (!githubId) {
+        return jsonResponse({ success: false, message: 'GitHub identity not found.' }, 400);
+      }
+
+      let cachedVerification;
+      try {
+        cachedVerification = await getCachedGithubVerification(env, githubId);
+      } catch (error) {
+        return genericError('github_cache_lookup', error, 500, 'Server configuration error.');
+      }
+      if (cachedVerification) {
+        return jsonResponse({
+          success: true,
+          github_id: githubId,
+          github_login: githubLogin,
+          avatar: userAvatar,
+          matched_email_domain: cachedVerification.matched_email_domain,
+          cached: true,
+        });
+      }
+
+      let matchedDomain;
+      try {
+        matchedDomain = await resolveGithubAllowedDomain(env, accessToken);
+      } catch (error) {
+        return genericError('github_email_check', error, 500, 'Failed to validate GitHub email domain.');
+      }
+
+      if (!matchedDomain) {
+        return jsonResponse(
+          {
+            success: false,
+            message: `No verified GitHub email found in allowed domain: ${allowedDomain}`,
+          },
+          403
+        );
+      }
+
+      try {
+        await cacheGithubVerification(env, githubId, githubLogin, matchedDomain);
+      } catch (error) {
+        return genericError('github_cache_store', error, 500, 'Server configuration error.');
+      }
+
+      return jsonResponse({
+        success: true,
+        github_id: githubId,
+        github_login: githubLogin,
+        avatar: userAvatar,
+        matched_email_domain: matchedDomain,
+        cached: false,
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/verify/github/connect') {
+      const body = await parseJson(request);
+      const { wechat_id, github_id } = body;
+
+      if (!wechat_id || !github_id) {
+        return jsonResponse({ success: false, message: 'wechat_id and github_id are required.' }, 400);
+      }
+
+      const blacklistResponse = await ensureNotBlacklisted(env, wechat_id);
+      if (blacklistResponse) {
+        return blacklistResponse;
+      }
+
+      let verifiedGithub;
+      try {
+        verifiedGithub = await getCachedGithubVerification(env, String(github_id));
+      } catch (error) {
+        return genericError('github_connect_cache_lookup', error, 500, 'Server configuration error.');
+      }
+      if (!verifiedGithub) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'github_id is not verified. Complete GitHub verification first.',
+          },
+          400
+        );
+      }
+
+      const connectedElsewhere = await queryFirst(
+        env,
+        `
+          SELECT wechat_id
+          FROM accounts
+          WHERE github_id = ? AND wechat_id <> ? AND verified_status = 1
+          LIMIT 1
+        `,
+        [verifiedGithub.github_id, wechat_id]
+      );
+
+      if (connectedElsewhere) {
+        return jsonResponse(
+          {
+            success: false,
+            message: 'This GitHub account is already connected to another WeChat ID.',
+          },
+          409
+        );
+      }
+
+      const existingAccountGithub = await queryFirst(
+        env,
+        'SELECT verified_status, verification_method FROM accounts WHERE wechat_id = ?',
+        [wechat_id]
+      );
+
+      if (existingAccountGithub && Number(existingAccountGithub.verified_status) === 1) {
+        const method = String(existingAccountGithub.verification_method || '');
+        if (method === 'Manual' || method === 'Batch') {
+          return jsonResponse({ success: false, message: 'Account is already verified. Reverification is not available for this account.' }, 400);
+        }
+        if (method === 'GitHub') {
+          await execRun(env, "UPDATE accounts SET reverified_at = datetime('now') WHERE wechat_id = ?", [wechat_id]);
+          const { token, expiresAt } = await createRenameToken(env, wechat_id);
+          const reverifiedAt = new Date().toISOString();
+          await execRun(
+            env,
+            `
+              INSERT INTO account_info (wechat_id, color, icon, title, body, creator, visibility)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [wechat_id, 'slate', 'refresh', 'Account reverified', `Account reverified at ${reverifiedAt}.`, 'SYSTEM', 'private']
+          );
+          return jsonResponse({
+            success: true,
+            message: 'Account reverified successfully.',
+            reverified: true,
+            rename_token: token,
+            rename_token_expires_at: expiresAt,
+          });
+        }
+        return jsonResponse({ success: false, message: 'Account is already verified.' }, 400);
+      }
+
+      await execRun(
+        env,
+        `
+          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, github_id)
+          VALUES (?, 1, 'GitHub', datetime('now'), ?)
+          ON CONFLICT(wechat_id) DO UPDATE SET
+            verified_status = 1,
+            verification_method = 'GitHub',
+            verification_time = datetime('now'),
+            github_id = excluded.github_id
+        `,
+        [wechat_id, verifiedGithub.github_id]
+      );
+
+      return jsonResponse({
+        success: true,
+        message: 'GitHub account connected and WeChat ID verified.',
+        github_id: body.github_id,
+      });
+    }
+
     if (method === 'POST' && pathname === '/api/verify/manual') {
       const body = await parseJson(request);
       const { wechat_id, reason } = body;
@@ -1300,8 +1637,8 @@ async function handleRequest(request, env) {
       await execRun(
         env,
         `
-          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, student_id, student_name, email, discord_id, manual_status, manual_reason, manual_admin, manual_time, reverified_at, last_rename_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          INSERT INTO accounts (wechat_id, verified_status, verification_method, verification_time, student_id, student_name, email, discord_id, github_id, manual_status, manual_reason, manual_admin, manual_time, reverified_at, last_rename_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         `,
         [
           newId,
@@ -1312,6 +1649,7 @@ async function handleRequest(request, env) {
           row.student_name ?? null,
           row.email ?? null,
           row.discord_id ?? null,
+          row.github_id ?? null,
           row.manual_status ?? null,
           row.manual_reason ?? null,
           row.manual_admin ?? null,
