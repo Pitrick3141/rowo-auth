@@ -3,6 +3,8 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { CheckCircle2, XCircle, Loader2, MessageSquare, ShieldCheck } from 'lucide-react';
 
+const consumedDiscordCodes = new Set<string>();
+
 const DiscordIcon = ({ className }: { className?: string }) => (
   <svg 
     viewBox="0 0 24 24" 
@@ -30,6 +32,11 @@ export default function DiscordCallback() {
       setMessage('No authorization code found. Please try again.');
       return;
     }
+
+    if (consumedDiscordCodes.has(code)) {
+      return;
+    }
+    consumedDiscordCodes.add(code);
 
     const verifyDiscord = async () => {
       try {

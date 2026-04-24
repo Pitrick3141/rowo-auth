@@ -3,6 +3,8 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { CheckCircle2, XCircle, Loader2, Github } from 'lucide-react';
 
+const consumedGithubCodes = new Set<string>();
+
 export default function GitHubCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -19,6 +21,11 @@ export default function GitHubCallback() {
       setMessage('No authorization code found. Please try again.');
       return;
     }
+
+    if (consumedGithubCodes.has(code)) {
+      return;
+    }
+    consumedGithubCodes.add(code);
 
     const verifyGithub = async () => {
       try {
