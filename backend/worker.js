@@ -504,9 +504,8 @@ async function githubApiJson(url, options, errorPrefix) {
 async function exchangeGithubOauthCode(env, code) {
   const clientId = env.GITHUB_CLIENT_ID;
   const clientSecret = env.GITHUB_CLIENT_SECRET;
-  const redirectUri = env.GITHUB_REDIRECT_URI;
 
-  if (!clientId || !clientSecret || !redirectUri) {
+  if (!clientId || !clientSecret) {
     throw new Error('Missing GitHub OAuth configuration in environment variables');
   }
 
@@ -514,7 +513,6 @@ async function exchangeGithubOauthCode(env, code) {
     client_id: clientId,
     client_secret: clientSecret,
     code: String(code || ''),
-    redirect_uri: redirectUri,
   }).toString();
 
   const tokenResult = await githubApiJson(
@@ -531,8 +529,19 @@ async function exchangeGithubOauthCode(env, code) {
     'GitHub OAuth token exchange failed'
   );
 
+  if (tokenResult?.error) {
+    throw new Error(
+      `GitHub OAuth token exchange rejected: ${tokenResult.error}${
+        tokenResult.error_description ? ` - ${tokenResult.error_description}` : ''
+      }`
+    );
+  }
+
   if (!tokenResult?.access_token) {
-    throw new Error('GitHub OAuth token exchange returned no access_token');
+    const snapshot = typeof tokenResult === 'object' && tokenResult !== null
+      ? JSON.stringify(tokenResult).slice(0, 500)
+      : String(tokenResult).slice(0, 500);
+    throw new Error(`GitHub OAuth token exchange returned no access_token. Body: ${snapshot}`);
   }
 
   return tokenResult.access_token;

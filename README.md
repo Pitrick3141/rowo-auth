@@ -70,7 +70,7 @@ Backend `backend/worker.js` expects runtime bindings/secrets such as:
 - Security: `SENSITIVE_DATA_HASH_SECRET`, `ADFS_JWT_SECRET`
 - Email (AWS SES): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SES_FROM_EMAIL`, `SES_FROM_NAME`
 - Discord: `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `DISCORD_BOT_TOKEN`
-- GitHub: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`
+- GitHub: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
 - Policy/rate-limit options: `EMAIL_SENDS_PER_MINUTE`, `CORS_ALLOW_ORIGINS`, `ALLOWED_EMAIL_DOMAIN`, `ADFS_PROVIDER_ENDPOINT`
 
 ## Available Scripts
@@ -127,7 +127,6 @@ This repository includes Worker deployment config at `backend/wrangler.toml` for
 - `DISCORD_REDIRECT_URI = "https://rowo.link/verify/discord/callback"`: Callback URL for Discord-based verification workflow.
 - `EMAIL_SENDS_PER_MINUTE = "60"`: Email send rate limit for email-based verification workflow.
 - `GITHUB_CLIENT_ID = ""`: Configure GitHub OAuth for GitHub-based verification workflow.
-- `GITHUB_REDIRECT_URI = "https://rowo.link/verify/github/callback"`: Callback URL for GitHub-based verification workflow.
 - `SES_FROM_EMAIL = "verification@rowo.link"`: Sender address for verification emails.
 - `SES_FROM_NAME = "ROwO Auth"`: Sender display name for verification emails.
 
@@ -236,7 +235,8 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 - Discord verification fails:
   - check OAuth redirect URI and guild/role related env vars
 - GitHub verification fails:
-  - check `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`/`GITHUB_REDIRECT_URI` and `config.github_client_id` in `package.json`
+  - check `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` and `config.github_client_id` in `package.json`
+  - ensure the GitHub OAuth App's "Authorization callback URL" matches the origin the frontend is served from
   - user's GitHub account must have at least one verified email under `ALLOWED_EMAIL_DOMAIN`
 - Admin panel cannot authenticate:
   - ensure admin token exists in backend data and is sent as Bearer token
